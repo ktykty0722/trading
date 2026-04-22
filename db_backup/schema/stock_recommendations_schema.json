@@ -1,0 +1,147 @@
+{
+  "table": "stock_recommendations",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "976",
+        "977",
+        "978"
+      ]
+    },
+    {
+      "name": "날짜",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-04-09",
+        "2026-04-09",
+        "2026-04-09"
+      ]
+    },
+    {
+      "name": "종목",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "애플",
+        "마이크로소프트",
+        "아마존"
+      ]
+    },
+    {
+      "name": "SMA20",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "253.12499923706",
+        "370.583497619629",
+        "209.286000061035"
+      ]
+    },
+    {
+      "name": "SMA50",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "257.20199798584",
+        "387.433397827148",
+        "209.995200195313"
+      ]
+    },
+    {
+      "name": "골든_크로스",
+      "type": "boolean",
+      "nullable": false,
+      "sample_values": [
+        "False",
+        "False",
+        "False"
+      ]
+    },
+    {
+      "name": "RSI",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "55.6677705934268",
+        "40.2246544702655",
+        "68.8927121212905"
+      ]
+    },
+    {
+      "name": "MACD",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.818312903012497",
+        "-4.584027633706",
+        "3.09048885092059"
+      ]
+    },
+    {
+      "name": "Signal",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "-0.366282021897586",
+        "-6.5393528502662",
+        "0.432898476738998"
+      ]
+    },
+    {
+      "name": "MACD_매수_신호",
+      "type": "boolean",
+      "nullable": false,
+      "sample_values": [
+        "True",
+        "True",
+        "True"
+      ]
+    },
+    {
+      "name": "추천_여부",
+      "type": "boolean",
+      "nullable": false,
+      "sample_values": [
+        "False",
+        "False",
+        "False"
+      ]
+    },
+    {
+      "name": "volume_ratio",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.69",
+        "1.23",
+        "1.81"
+      ]
+    },
+    {
+      "name": "adx",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "18.02",
+        "31.36",
+        "15.51"
+      ]
+    },
+    {
+      "name": "daily_change_pct",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.61",
+        "-0.34",
+        "5.6"
+      ]
+    }
+  ],
+  "column_count": 14,
+  "row_count": 25
+}

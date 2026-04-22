@@ -1,0 +1,47 @@
+{
+  "table": "access_tokens",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "1"
+      ]
+    },
+    {
+      "name": "access_token",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6IjE4MzUxODA5LTY4ZjItNDlhMC04ZTMzLTk"
+      ]
+    },
+    {
+      "name": "expiration_time",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-04-11T13:31:09.887760+00:00"
+      ]
+    },
+    {
+      "name": "is_active",
+      "type": "boolean",
+      "nullable": false,
+      "sample_values": [
+        "True"
+      ]
+    },
+    {
+      "name": "created_at",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-07T08:57:39.141555+00:00"
+      ]
+    }
+  ],
+  "column_count": 5,
+  "row_count": 1
+}

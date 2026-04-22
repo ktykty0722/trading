@@ -1,0 +1,147 @@
+{
+  "table": "stock_analysis_results",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "703",
+        "704",
+        "705"
+      ]
+    },
+    {
+      "name": "Stock",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "넷플릭스",
+        "어도비",
+        "컴캐스트"
+      ]
+    },
+    {
+      "name": "MAE",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "13.6229",
+        "12.4729",
+        "1.1578"
+      ]
+    },
+    {
+      "name": "MSE",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "510.9992",
+        "300.9139",
+        "1.9923"
+      ]
+    },
+    {
+      "name": "RMSE",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "22.6053",
+        "17.3469",
+        "1.4115"
+      ]
+    },
+    {
+      "name": "MAPE (%)",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "37.8954",
+        "12.3631",
+        "8.3868"
+      ]
+    },
+    {
+      "name": "Accuracy (%)",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "62.1046",
+        "87.6369",
+        "91.6132"
+      ]
+    },
+    {
+      "name": "Last Actual Price",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "102.050003051758",
+        "229.940002441406",
+        "28.3099994659424"
+      ]
+    },
+    {
+      "name": "Predicted Future Price",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "129.676528930664",
+        "259.564453125",
+        "29.9734764099121"
+      ]
+    },
+    {
+      "name": "Predicted Rise",
+      "type": "boolean",
+      "nullable": false,
+      "sample_values": [
+        "True",
+        "True",
+        "True"
+      ]
+    },
+    {
+      "name": "Rise Probability (%)",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "27.0715581114626",
+        "12.8835567404775",
+        "5.87593421176468"
+      ]
+    },
+    {
+      "name": "Recommendation",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "STRONG BUY",
+        "STRONG BUY",
+        "STRONG BUY"
+      ]
+    },
+    {
+      "name": "Analysis",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "넷플릭스 is expected to rise by about 27.07%. Consider buying or holding.",
+        "어도비 is expected to rise by about 12.88%. Consider buying or holding.",
+        "컴캐스트 is expected to rise by about 5.88%. Consider buying or holding."
+      ]
+    },
+    {
+      "name": "created_at",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-04-10T11:03:00.612348+00:00",
+        "2026-04-10T11:03:00.612348+00:00",
+        "2026-04-10T11:03:00.612348+00:00"
+      ]
+    }
+  ],
+  "column_count": 14,
+  "row_count": 27
+}

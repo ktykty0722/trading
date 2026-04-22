@@ -1,0 +1,1929 @@
+{
+  "economic_and_stock_data": {
+    "table": "economic_and_stock_data",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      {
+        "name": "날짜",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2006-01-03",
+          "2006-01-04",
+          "2006-01-05"
+        ]
+      },
+      {
+        "name": "나스닥 종합지수",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "2243.74",
+          "2263.46",
+          "2276.87"
+        ]
+      },
+      {
+        "name": "S&P 500 지수",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "1268.80004882812",
+          "1273.4599609375",
+          "1273.47998046875"
+        ]
+      },
+      {
+        "name": "금 가격",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "530.700012207031",
+          "533.900024414062",
+          "526.299987792969"
+        ]
+      },
+      {
+        "name": "달러 인덱스",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "89.8399963378906",
+          "89.1399993896484",
+          "89.3300018310547"
+        ]
+      },
+      {
+        "name": "나스닥 100",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "1679.93005371094",
+          "1695.82995605469",
+          "1705.2900390625"
+        ]
+      },
+      {
+        "name": "S&P 500 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "88.4903564453125",
+          "88.909423828125",
+          "88.9653091430664"
+        ]
+      },
+      {
+        "name": "QQQ ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "35.536376953125",
+          "35.9062767028809",
+          "36.0611228942871"
+        ]
+      },
+      {
+        "name": "러셀 2000 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "52.6967391967773",
+          "52.9832572937012",
+          "53.2697792053223"
+        ]
+      },
+      {
+        "name": "다우 존스 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "70.3557586669922",
+          "70.6220550537109",
+          "70.7129745483398"
+        ]
+      },
+      {
+        "name": "VIX 지수",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.1400003433228",
+          "11.3699998855591",
+          "11.3100004196167"
+        ]
+      },
+      {
+        "name": "닛케이 225",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "16361.5400390625",
+          "16425.369140625"
+        ]
+      },
+      {
+        "name": "상해종합",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "1180.96301269531",
+          "1197.26904296875"
+        ]
+      },
+      {
+        "name": "항셍",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "14944.76953125",
+          "15200.0595703125",
+          "15271.1298828125"
+        ]
+      },
+      {
+        "name": "영국 FTSE",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "5681.5",
+          "5714.60009765625",
+          "5691.2001953125"
+        ]
+      },
+      {
+        "name": "독일 DAX",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "5460.68017578125",
+          "5523.6201171875",
+          "5516.52978515625"
+        ]
+      },
+      {
+        "name": "프랑스 CAC 40",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4776.97998046875",
+          "4838.52001953125",
+          "4835.08984375"
+        ]
+      },
+      {
+        "name": "미국 전체 채권시장 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "55.6155738830566",
+          "55.7482604980469",
+          "55.7482604980469"
+        ]
+      },
+      {
+        "name": "TIPS ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "58.7105827331543",
+          "58.7162132263184",
+          "58.5453109741211"
+        ]
+      },
+      {
+        "name": "투자등급 회사채 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "50.8176383972168",
+          "50.8176383972168",
+          "50.8598480224609"
+        ]
+      },
+      {
+        "name": "달러/엔",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "115.980003356934",
+          "116.220001220703",
+          "116"
+        ]
+      },
+      {
+        "name": "달러/위안",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "8.06620025634766",
+          "8.06700038909912",
+          "8.06369972229004"
+        ]
+      },
+      {
+        "name": "미국 리츠 ETF",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "27.3663787841797",
+          "27.5690536499023",
+          "27.7807559967041"
+        ]
+      },
+      {
+        "name": "애플",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "2.24949741363525",
+          "2.25611710548401",
+          "2.23836278915405"
+        ]
+      },
+      {
+        "name": "마이크로소프트",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "18.8153858184814",
+          "18.9065189361572",
+          "18.920539855957"
+        ]
+      },
+      {
+        "name": "아마존",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "2.37899994850159",
+          "2.36249995231628",
+          "2.3824999332428"
+        ]
+      },
+      {
+        "name": "구글 A",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "10.8523015975952",
+          "11.1018972396851",
+          "11.2515048980713"
+        ]
+      },
+      {
+        "name": "구글 C",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "10.8013095855713",
+          "11.0497303009033",
+          "11.1986360549927"
+        ]
+      },
+      {
+        "name": "메타",
+        "type": "unknown",
+        "nullable": true,
+        "sample_values": []
+      },
+      {
+        "name": "테슬라",
+        "type": "unknown",
+        "nullable": true,
+        "sample_values": []
+      },
+      {
+        "name": "엔비디아",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.292091637849808",
+          "0.300269186496735",
+          "0.307070344686508"
+        ]
+      },
+      {
+        "name": "코스트코",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "34.0600662231445",
+          "34.1692581176758",
+          "33.9645614624023"
+        ]
+      },
+      {
+        "name": "넷플릭스",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "3.72142910957336",
+          "3.57142901420593",
+          "3.56142902374268"
+        ]
+      },
+      {
+        "name": "페이팔",
+        "type": "unknown",
+        "nullable": true,
+        "sample_values": []
+      },
+      {
+        "name": "인텔",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "14.9770727157593",
+          "15.1762218475342",
+          "15.3870849609375"
+        ]
+      },
+      {
+        "name": "시스코",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.5653886795044",
+          "11.8304977416992",
+          "12.1618795394897"
+        ]
+      },
+      {
+        "name": "컴캐스트",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "6.17730569839478",
+          "6.21263027191162",
+          "6.22205400466919"
+        ]
+      },
+      {
+        "name": "펩시코",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "34.9606742858887",
+          "34.9431228637695",
+          "34.7383728027344"
+        ]
+      },
+      {
+        "name": "암젠",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "56.0598411560059",
+          "55.7947425842285",
+          "54.985523223877"
+        ]
+      },
+      {
+        "name": "허니웰 인터내셔널",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "23.1416873931885",
+          "23.0489978790283",
+          "23.0366611480713"
+        ]
+      },
+      {
+        "name": "스타벅스",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.7692365646362",
+          "12.0742425918579",
+          "12.0513620376587"
+        ]
+      },
+      {
+        "name": "몬델리즈",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.4118747711182",
+          "11.3711938858032",
+          "11.3264379501343"
+        ]
+      },
+      {
+        "name": "마이크론",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "13.2248649597168",
+          "13.7534675598145",
+          "13.8807239532471"
+        ]
+      },
+      {
+        "name": "브로드컴",
+        "type": "unknown",
+        "nullable": true,
+        "sample_values": []
+      },
+      {
+        "name": "어도비",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "38.5200004577637",
+          "38.4199981689453",
+          "38.0699996948242"
+        ]
+      },
+      {
+        "name": "텍사스 인스트루먼트",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "21.2899951934814",
+          "21.482141494751",
+          "21.8664360046387"
+        ]
+      },
+      {
+        "name": "AMD",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "32.4000015258789",
+          "32.560001373291",
+          "33.6800003051758"
+        ]
+      },
+      {
+        "name": "어플라이드 머티리얼즈",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "13.4506120681763",
+          "13.568021774292",
+          "13.7221193313599"
+        ]
+      },
+      {
+        "name": "10년 기대 인플레이션율",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "2.34",
+          "2.35",
+          "2.32"
+        ]
+      },
+      {
+        "name": "장단기 금리차",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.03",
+          "0.05",
+          "0.04"
+        ]
+      },
+      {
+        "name": "기준금리",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.29",
+          "4.29",
+          "4.29"
+        ]
+      },
+      {
+        "name": "미시간대 소비자 심리지수",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "91.2",
+          "91.2",
+          "91.2"
+        ]
+      },
+      {
+        "name": "실업률",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.7",
+          "4.7",
+          "4.7"
+        ]
+      },
+      {
+        "name": "2년 만기 미국 국채 수익률",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.34",
+          "4.31",
+          "4.32"
+        ]
+      },
+      {
+        "name": "10년 만기 미국 국채 수익률",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.37",
+          "4.36",
+          "4.36"
+        ]
+      },
+      {
+        "name": "금융스트레스지수",
+        "type": "float",
+        "nullable": true,
+        "sample_values": []
+      },
+      {
+        "name": "개인 소비 지출",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "9071.6",
+          "9071.6",
+          "9071.6"
+        ]
+      },
+      {
+        "name": "소비자 물가지수",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "199.3",
+          "199.3",
+          "199.3"
+        ]
+      },
+      {
+        "name": "5년 변동금리 모기지",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "6.21"
+        ]
+      },
+      {
+        "name": "미국 달러 환율",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "100",
+          "100",
+          "100"
+        ]
+      },
+      {
+        "name": "통화 공급량 M2",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "6730.1",
+          "6730.1",
+          "6730.1"
+        ]
+      },
+      {
+        "name": "가계 부채 비율",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "14.989443",
+          "14.989443",
+          "14.989443"
+        ]
+      },
+      {
+        "name": "GDP 성장률",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "16353.835",
+          "16353.835",
+          "16353.835"
+        ]
+      }
+    ],
+    "column_count": 64,
+    "row_count": 7139
+  },
+  "stock_analysis_results": {
+    "table": "stock_analysis_results",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "703",
+          "704",
+          "705"
+        ]
+      },
+      {
+        "name": "Stock",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "넷플릭스",
+          "어도비",
+          "컴캐스트"
+        ]
+      },
+      {
+        "name": "MAE",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "13.6229",
+          "12.4729",
+          "1.1578"
+        ]
+      },
+      {
+        "name": "MSE",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "510.9992",
+          "300.9139",
+          "1.9923"
+        ]
+      },
+      {
+        "name": "RMSE",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "22.6053",
+          "17.3469",
+          "1.4115"
+        ]
+      },
+      {
+        "name": "MAPE (%)",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "37.8954",
+          "12.3631",
+          "8.3868"
+        ]
+      },
+      {
+        "name": "Accuracy (%)",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "62.1046",
+          "87.6369",
+          "91.6132"
+        ]
+      },
+      {
+        "name": "Last Actual Price",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "102.050003051758",
+          "229.940002441406",
+          "28.3099994659424"
+        ]
+      },
+      {
+        "name": "Predicted Future Price",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "129.676528930664",
+          "259.564453125",
+          "29.9734764099121"
+        ]
+      },
+      {
+        "name": "Predicted Rise",
+        "type": "boolean",
+        "nullable": false,
+        "sample_values": [
+          "True",
+          "True",
+          "True"
+        ]
+      },
+      {
+        "name": "Rise Probability (%)",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "27.0715581114626",
+          "12.8835567404775",
+          "5.87593421176468"
+        ]
+      },
+      {
+        "name": "Recommendation",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "STRONG BUY",
+          "STRONG BUY",
+          "STRONG BUY"
+        ]
+      },
+      {
+        "name": "Analysis",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "넷플릭스 is expected to rise by about 27.07%. Consider buying or holding.",
+          "어도비 is expected to rise by about 12.88%. Consider buying or holding.",
+          "컴캐스트 is expected to rise by about 5.88%. Consider buying or holding."
+        ]
+      },
+      {
+        "name": "created_at",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-04-10T11:03:00.612348+00:00",
+          "2026-04-10T11:03:00.612348+00:00",
+          "2026-04-10T11:03:00.612348+00:00"
+        ]
+      }
+    ],
+    "column_count": 14,
+    "row_count": 27
+  },
+  "predicted_stocks": {
+    "table": "predicted_stocks",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "182812",
+          "182813",
+          "182814"
+        ]
+      },
+      {
+        "name": "날짜",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2006-04-05",
+          "2006-04-06",
+          "2006-04-07"
+        ]
+      },
+      {
+        "name": "애플_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "-0.0776296332478523",
+          "-0.196431934833527",
+          "-0.311038017272949"
+        ]
+      },
+      {
+        "name": "애플_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "2.02259063720703",
+          "2.14386820793152",
+          "2.10023212432861"
+        ]
+      },
+      {
+        "name": "마이크로소프트_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "20.0361824035645",
+          "20.0895481109619",
+          "20.1478977203369"
+        ]
+      },
+      {
+        "name": "마이크로소프트_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "19.5122051239014",
+          "19.3855876922607",
+          "19.167537689209"
+        ]
+      },
+      {
+        "name": "아마존_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "3.48530697822571",
+          "3.40323853492737",
+          "3.32140326499939"
+        ]
+      },
+      {
+        "name": "아마존_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "1.86699998378754",
+          "1.92550003528595",
+          "1.85450005531311"
+        ]
+      },
+      {
+        "name": "구글 A_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "8.27093601226807",
+          "8.1731128692627",
+          "8.07540130615234"
+        ]
+      },
+      {
+        "name": "구글 A_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "10.1730813980103",
+          "10.2526235580444",
+          "10.1274509429932"
+        ]
+      },
+      {
+        "name": "구글 C_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "9.24971961975098",
+          "9.07679748535156",
+          "8.9094123840332"
+        ]
+      },
+      {
+        "name": "구글 C_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "10.125280380249",
+          "10.2044486999512",
+          "10.0798645019531"
+        ]
+      },
+      {
+        "name": "메타_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "18.8770198822021",
+          "19.0833301544189",
+          "19.2838668823242"
+        ]
+      },
+      {
+        "name": "메타_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "38.0845184326172",
+          "38.0845184326172",
+          "38.0845184326172"
+        ]
+      },
+      {
+        "name": "테슬라_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.24150419235229",
+          "4.15459012985229",
+          "4.06999111175537"
+        ]
+      },
+      {
+        "name": "테슬라_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "1.59266698360443",
+          "1.59266698360443",
+          "1.59266698360443"
+        ]
+      },
+      {
+        "name": "엔비디아_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "-1.32979345321655",
+          "-1.33463859558105",
+          "-1.34077858924866"
+        ]
+      },
+      {
+        "name": "엔비디아_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.466949552297592",
+          "0.467866539955139",
+          "0.466643184423447"
+        ]
+      },
+      {
+        "name": "코스트코_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "32.0553817749023",
+          "31.5537605285645",
+          "31.0798568725586"
+        ]
+      },
+      {
+        "name": "코스트코_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "37.7096633911133",
+          "38.7013168334961",
+          "38.092643737793"
+        ]
+      },
+      {
+        "name": "넷플릭스_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "-1.38758099079132",
+          "-1.25232970714569",
+          "-1.10283362865448"
+        ]
+      },
+      {
+        "name": "넷플릭스_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "4.09428596496582",
+          "4.0357141494751",
+          "3.99142909049988"
+        ]
+      },
+      {
+        "name": "페이팔_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "38.2495765686035",
+          "38.390209197998",
+          "38.5216407775879"
+        ]
+      },
+      {
+        "name": "페이팔_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "36.7099990844727",
+          "36.7099990844727",
+          "36.7099990844727"
+        ]
+      },
+      {
+        "name": "인텔_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "9.99589538574219",
+          "9.98874855041504",
+          "9.9790735244751"
+        ]
+      },
+      {
+        "name": "인텔_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.4640626907349",
+          "11.4052114486694",
+          "11.3228197097778"
+        ]
+      },
+      {
+        "name": "시스코_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.5296478271484",
+          "11.5409603118896",
+          "11.5458707809448"
+        ]
+      },
+      {
+        "name": "시스코_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "14.3755435943604",
+          "14.0375337600708",
+          "13.7922945022583"
+        ]
+      },
+      {
+        "name": "컴캐스트_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "5.68314027786255",
+          "5.70647859573364",
+          "5.72856044769287"
+        ]
+      },
+      {
+        "name": "컴캐스트_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "6.36806488037109",
+          "6.45284748077393",
+          "6.48110866546631"
+        ]
+      },
+      {
+        "name": "펩시코_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "36.4890289306641",
+          "36.390380859375",
+          "36.2914581298828"
+        ]
+      },
+      {
+        "name": "펩시코_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "34.0146789550781",
+          "34.091064453125",
+          "33.9617919921875"
+        ]
+      },
+      {
+        "name": "암젠_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "53.4846153259277",
+          "53.3325386047363",
+          "53.1869621276855"
+        ]
+      },
+      {
+        "name": "암젠_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "50.8277626037598",
+          "50.1231918334961",
+          "49.5511474609375"
+        ]
+      },
+      {
+        "name": "허니웰 인터내셔널_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "19.0933666229248",
+          "19.0345764160156",
+          "18.9786682128906"
+        ]
+      },
+      {
+        "name": "허니웰 인터내셔널_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "26.7021617889404",
+          "26.6152057647705",
+          "26.3357067108154"
+        ]
+      },
+      {
+        "name": "스타벅스_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.4440069198608",
+          "11.4092702865601",
+          "11.3748722076416"
+        ]
+      },
+      {
+        "name": "스타벅스_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "14.2931241989136",
+          "14.2778720855713",
+          "14.4341888427734"
+        ]
+      },
+      {
+        "name": "몬델리즈_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "11.6710195541382",
+          "11.6491212844849",
+          "11.6279649734497"
+        ]
+      },
+      {
+        "name": "몬델리즈_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "12.4166202545166",
+          "12.4166202545166",
+          "12.2977428436279"
+        ]
+      },
+      {
+        "name": "마이크론_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "3.88963985443115",
+          "3.84608507156372",
+          "3.79519295692444"
+        ]
+      },
+      {
+        "name": "마이크론_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "15.2315998077393",
+          "15.2511768341064",
+          "14.9281396865845"
+        ]
+      },
+      {
+        "name": "브로드컴_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "-4.09866380691528",
+          "-4.03471708297729",
+          "-3.9789822101593"
+        ]
+      },
+      {
+        "name": "브로드컴_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "1.15007412433624",
+          "1.15007412433624",
+          "1.15007412433624"
+        ]
+      },
+      {
+        "name": "어도비_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "35.2883415222168",
+          "35.0932884216309",
+          "34.8928833007812"
+        ]
+      },
+      {
+        "name": "어도비_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "35.9900016784668",
+          "36.0999984741211",
+          "36.9500007629395"
+        ]
+      },
+      {
+        "name": "텍사스 인스트루먼트_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "17.9143409729004",
+          "17.9207077026367",
+          "17.9269771575928"
+        ]
+      },
+      {
+        "name": "텍사스 인스트루먼트_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "21.2983741760254",
+          "21.5612316131592",
+          "21.2022018432617"
+        ]
+      },
+      {
+        "name": "AMD_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "32.3731002807617",
+          "32.2214508056641",
+          "32.0709915161133"
+        ]
+      },
+      {
+        "name": "AMD_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "34.7799987792969",
+          "34.7000007629395",
+          "33.689998626709"
+        ]
+      },
+      {
+        "name": "어플라이드 머티리얼즈_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "12.4450578689575",
+          "12.3995237350464",
+          "12.3494291305542"
+        ]
+      },
+      {
+        "name": "어플라이드 머티리얼즈_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "13.4195127487183",
+          "13.5444555282593",
+          "13.2578382492065"
+        ]
+      },
+      {
+        "name": "S&P 500 ETF_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "79.4834442138672",
+          "79.416130065918",
+          "79.3351058959961"
+        ]
+      },
+      {
+        "name": "S&P 500 ETF_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "91.8644256591797",
+          "91.7662734985352",
+          "90.8336791992188"
+        ]
+      },
+      {
+        "name": "QQQ ETF_Predicted",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "21.9092864990234",
+          "21.9171943664551",
+          "21.9191741943359"
+        ]
+      },
+      {
+        "name": "QQQ ETF_Actual",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "36.6803855895996",
+          "36.7836952209473",
+          "36.4307441711426"
+        ]
+      }
+    ],
+    "column_count": 56,
+    "row_count": 7049
+  },
+  "stock_recommendations": {
+    "table": "stock_recommendations",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "976",
+          "977",
+          "978"
+        ]
+      },
+      {
+        "name": "날짜",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-04-09",
+          "2026-04-09",
+          "2026-04-09"
+        ]
+      },
+      {
+        "name": "종목",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "애플",
+          "마이크로소프트",
+          "아마존"
+        ]
+      },
+      {
+        "name": "SMA20",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "253.12499923706",
+          "370.583497619629",
+          "209.286000061035"
+        ]
+      },
+      {
+        "name": "SMA50",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "257.20199798584",
+          "387.433397827148",
+          "209.995200195313"
+        ]
+      },
+      {
+        "name": "골든_크로스",
+        "type": "boolean",
+        "nullable": false,
+        "sample_values": [
+          "False",
+          "False",
+          "False"
+        ]
+      },
+      {
+        "name": "RSI",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "55.6677705934268",
+          "40.2246544702655",
+          "68.8927121212905"
+        ]
+      },
+      {
+        "name": "MACD",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.818312903012497",
+          "-4.584027633706",
+          "3.09048885092059"
+        ]
+      },
+      {
+        "name": "Signal",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "-0.366282021897586",
+          "-6.5393528502662",
+          "0.432898476738998"
+        ]
+      },
+      {
+        "name": "MACD_매수_신호",
+        "type": "boolean",
+        "nullable": false,
+        "sample_values": [
+          "True",
+          "True",
+          "True"
+        ]
+      },
+      {
+        "name": "추천_여부",
+        "type": "boolean",
+        "nullable": false,
+        "sample_values": [
+          "False",
+          "False",
+          "False"
+        ]
+      },
+      {
+        "name": "volume_ratio",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.69",
+          "1.23",
+          "1.81"
+        ]
+      },
+      {
+        "name": "adx",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "18.02",
+          "31.36",
+          "15.51"
+        ]
+      },
+      {
+        "name": "daily_change_pct",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.61",
+          "-0.34",
+          "5.6"
+        ]
+      }
+    ],
+    "column_count": 14,
+    "row_count": 25
+  },
+  "ticker_sentiment_analysis": {
+    "table": "ticker_sentiment_analysis",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "272",
+          "273",
+          "274"
+        ]
+      },
+      {
+        "name": "ticker",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "MSFT",
+          "ADBE",
+          "NFLX"
+        ]
+      },
+      {
+        "name": "average_sentiment_score",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.19553246",
+          "-0.061468",
+          "0.254070708333333"
+        ]
+      },
+      {
+        "name": "article_count",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "50",
+          "30",
+          "48"
+        ]
+      },
+      {
+        "name": "calculation_date",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-04-10 20:19:02",
+          "2026-04-10 20:19:08",
+          "2026-04-10 20:19:15"
+        ]
+      }
+    ],
+    "column_count": 5,
+    "row_count": 7
+  },
+  "trade_records": {
+    "table": "trade_records",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      {
+        "name": "ticker",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "PEP",
+          "CMCSA",
+          "PEP"
+        ]
+      },
+      {
+        "name": "stock_name",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "펩시코",
+          "컴캐스트",
+          "펩시코"
+        ]
+      },
+      {
+        "name": "buy_price",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "159.55",
+          "30.76",
+          "160.765"
+        ]
+      },
+      {
+        "name": "buy_date",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-09T10:55:16+00:00",
+          "2026-03-09T10:55:21+00:00",
+          "2026-03-10T10:34:46+00:00"
+        ]
+      },
+      {
+        "name": "quantity",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "328",
+          "1535",
+          "294"
+        ]
+      },
+      {
+        "name": "exchange_code",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "NASD",
+          "NASD",
+          "NASD"
+        ]
+      },
+      {
+        "name": "atr",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "3.3062",
+          "0.8658",
+          "3.3557"
+        ]
+      },
+      {
+        "name": "take_profit_price",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "167.82",
+          "32.92",
+          "169.15"
+        ]
+      },
+      {
+        "name": "stop_loss_price",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "154.59",
+          "29.46",
+          "155.73"
+        ]
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "buy_failed",
+          "sold",
+          "sold"
+        ]
+      },
+      {
+        "name": "sell_price",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "29.195",
+          "155.71"
+        ]
+      },
+      {
+        "name": "sell_date",
+        "type": "text",
+        "nullable": true,
+        "sample_values": [
+          "2026-03-18T14:13:00.257769+00:00",
+          "2026-03-18T13:30:26.381074+00:00"
+        ]
+      },
+      {
+        "name": "sell_reason",
+        "type": "text",
+        "nullable": true,
+        "sample_values": [
+          "stop_loss",
+          "stop_loss"
+        ]
+      },
+      {
+        "name": "profit_loss",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "-2388.46",
+          "-1486.17"
+        ]
+      },
+      {
+        "name": "profit_loss_pct",
+        "type": "float",
+        "nullable": true,
+        "sample_values": [
+          "-5.06",
+          "-3.14"
+        ]
+      },
+      {
+        "name": "composite_score",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.496",
+          "0.4385",
+          "0.3969"
+        ]
+      },
+      {
+        "name": "created_at",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-09T14:55:16.978547+00:00",
+          "2026-03-09T14:55:21.758165+00:00",
+          "2026-03-10T14:34:46.804452+00:00"
+        ]
+      },
+      {
+        "name": "holding_quantity",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    ],
+    "column_count": 19,
+    "row_count": 10
+  },
+  "llm_decision_logs": {
+    "table": "llm_decision_logs",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      {
+        "name": "decision_date",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-08",
+          "2026-03-08",
+          "2026-03-08"
+        ]
+      },
+      {
+        "name": "ticker",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "AMAT",
+          "TXN",
+          "CMCSA"
+        ]
+      },
+      {
+        "name": "stock_name",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "어플라이드 머티리얼즈",
+          "텍사스 인스트루먼트",
+          "컴캐스트"
+        ]
+      },
+      {
+        "name": "decision",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "HOLD",
+          "HOLD",
+          "BUY"
+        ]
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "골든크로스가 발생했으나 현재가($324.74)가 SMA20($364.78) 대비 약 11% 하회하고 MACD도 매수신호가 아니어서 골든크로스의 유효성이 의심됩니다. RSI 26으로",
+          "RSI 2.44는 극단적 과매도로 데이터 이상치 가능성이 있으며, 현재가($193.23)가 SMA20($212.39) 대비 약 9% 하회하고 MACD가 강한 하락 신호(-5.0 v",
+          "4종목 중 유일하게 MACD 매수신호가 확인되었고, 현재가($31.91)가 SMA20($31.36)과 SMA50($30.55) 위에 위치하여 골든크로스가 유효합니다. RSI 58로"
+        ]
+      },
+      {
+        "name": "market_analysis",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 ",
+          "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 ",
+          "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 "
+        ]
+      },
+      {
+        "name": "composite_score",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "0.5036",
+          "0.4536",
+          "0.41"
+        ]
+      },
+      {
+        "name": "rise_probability",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "13.09",
+          "8.65",
+          "8.52"
+        ]
+      },
+      {
+        "name": "rsi",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "26.19",
+          "2.44",
+          "58.12"
+        ]
+      },
+      {
+        "name": "adx",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "30.5",
+          "32.87",
+          "15.98"
+        ]
+      },
+      {
+        "name": "vix_value",
+        "type": "float",
+        "nullable": false,
+        "sample_values": [
+          "29.49",
+          "29.49",
+          "29.49"
+        ]
+      },
+      {
+        "name": "created_at",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-08T01:12:31.133949+00:00",
+          "2026-03-08T01:12:31.407764+00:00",
+          "2026-03-08T01:12:31.714396+00:00"
+        ]
+      },
+      {
+        "name": "updated_at",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-08T10:54:11.25741+00:00",
+          "2026-03-08T10:54:11.536691+00:00",
+          "2026-03-08T10:54:11.745297+00:00"
+        ]
+      }
+    ],
+    "column_count": 14,
+    "row_count": 77
+  },
+  "access_tokens": {
+    "table": "access_tokens",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "sample_values": [
+          "1"
+        ]
+      },
+      {
+        "name": "access_token",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0b2tlbiIsImF1ZCI6IjE4MzUxODA5LTY4ZjItNDlhMC04ZTMzLTk"
+        ]
+      },
+      {
+        "name": "expiration_time",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-04-11T13:31:09.887760+00:00"
+        ]
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "nullable": false,
+        "sample_values": [
+          "True"
+        ]
+      },
+      {
+        "name": "created_at",
+        "type": "text",
+        "nullable": false,
+        "sample_values": [
+          "2026-03-07T08:57:39.141555+00:00"
+        ]
+      }
+    ],
+    "column_count": 5,
+    "row_count": 1
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "table": "ticker_sentiment_analysis",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "272",
+        "273",
+        "274"
+      ]
+    },
+    {
+      "name": "ticker",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "MSFT",
+        "ADBE",
+        "NFLX"
+      ]
+    },
+    {
+      "name": "average_sentiment_score",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.19553246",
+        "-0.061468",
+        "0.254070708333333"
+      ]
+    },
+    {
+      "name": "article_count",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "50",
+        "30",
+        "48"
+      ]
+    },
+    {
+      "name": "calculation_date",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-04-10 20:19:02",
+        "2026-04-10 20:19:08",
+        "2026-04-10 20:19:15"
+      ]
+    }
+  ],
+  "column_count": 5,
+  "row_count": 7
+}

@@ -1,0 +1,192 @@
+{
+  "table": "trade_records",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "1",
+        "2",
+        "3"
+      ]
+    },
+    {
+      "name": "ticker",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "PEP",
+        "CMCSA",
+        "PEP"
+      ]
+    },
+    {
+      "name": "stock_name",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "펩시코",
+        "컴캐스트",
+        "펩시코"
+      ]
+    },
+    {
+      "name": "buy_price",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "159.55",
+        "30.76",
+        "160.765"
+      ]
+    },
+    {
+      "name": "buy_date",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-09T10:55:16+00:00",
+        "2026-03-09T10:55:21+00:00",
+        "2026-03-10T10:34:46+00:00"
+      ]
+    },
+    {
+      "name": "quantity",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "328",
+        "1535",
+        "294"
+      ]
+    },
+    {
+      "name": "exchange_code",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "NASD",
+        "NASD",
+        "NASD"
+      ]
+    },
+    {
+      "name": "atr",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "3.3062",
+        "0.8658",
+        "3.3557"
+      ]
+    },
+    {
+      "name": "take_profit_price",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "167.82",
+        "32.92",
+        "169.15"
+      ]
+    },
+    {
+      "name": "stop_loss_price",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "154.59",
+        "29.46",
+        "155.73"
+      ]
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "buy_failed",
+        "sold",
+        "sold"
+      ]
+    },
+    {
+      "name": "sell_price",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "29.195",
+        "155.71"
+      ]
+    },
+    {
+      "name": "sell_date",
+      "type": "text",
+      "nullable": true,
+      "sample_values": [
+        "2026-03-18T14:13:00.257769+00:00",
+        "2026-03-18T13:30:26.381074+00:00"
+      ]
+    },
+    {
+      "name": "sell_reason",
+      "type": "text",
+      "nullable": true,
+      "sample_values": [
+        "stop_loss",
+        "stop_loss"
+      ]
+    },
+    {
+      "name": "profit_loss",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "-2388.46",
+        "-1486.17"
+      ]
+    },
+    {
+      "name": "profit_loss_pct",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "-5.06",
+        "-3.14"
+      ]
+    },
+    {
+      "name": "composite_score",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.496",
+        "0.4385",
+        "0.3969"
+      ]
+    },
+    {
+      "name": "created_at",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-09T14:55:16.978547+00:00",
+        "2026-03-09T14:55:21.758165+00:00",
+        "2026-03-10T14:34:46.804452+00:00"
+      ]
+    },
+    {
+      "name": "holding_quantity",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "0",
+        "0",
+        "0"
+      ]
+    }
+  ],
+  "column_count": 19,
+  "row_count": 10
+}

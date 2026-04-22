@@ -1,0 +1,567 @@
+{
+  "table": "predicted_stocks",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "182812",
+        "182813",
+        "182814"
+      ]
+    },
+    {
+      "name": "날짜",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2006-04-05",
+        "2006-04-06",
+        "2006-04-07"
+      ]
+    },
+    {
+      "name": "애플_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "-0.0776296332478523",
+        "-0.196431934833527",
+        "-0.311038017272949"
+      ]
+    },
+    {
+      "name": "애플_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "2.02259063720703",
+        "2.14386820793152",
+        "2.10023212432861"
+      ]
+    },
+    {
+      "name": "마이크로소프트_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "20.0361824035645",
+        "20.0895481109619",
+        "20.1478977203369"
+      ]
+    },
+    {
+      "name": "마이크로소프트_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "19.5122051239014",
+        "19.3855876922607",
+        "19.167537689209"
+      ]
+    },
+    {
+      "name": "아마존_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "3.48530697822571",
+        "3.40323853492737",
+        "3.32140326499939"
+      ]
+    },
+    {
+      "name": "아마존_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "1.86699998378754",
+        "1.92550003528595",
+        "1.85450005531311"
+      ]
+    },
+    {
+      "name": "구글 A_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "8.27093601226807",
+        "8.1731128692627",
+        "8.07540130615234"
+      ]
+    },
+    {
+      "name": "구글 A_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "10.1730813980103",
+        "10.2526235580444",
+        "10.1274509429932"
+      ]
+    },
+    {
+      "name": "구글 C_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "9.24971961975098",
+        "9.07679748535156",
+        "8.9094123840332"
+      ]
+    },
+    {
+      "name": "구글 C_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "10.125280380249",
+        "10.2044486999512",
+        "10.0798645019531"
+      ]
+    },
+    {
+      "name": "메타_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "18.8770198822021",
+        "19.0833301544189",
+        "19.2838668823242"
+      ]
+    },
+    {
+      "name": "메타_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "38.0845184326172",
+        "38.0845184326172",
+        "38.0845184326172"
+      ]
+    },
+    {
+      "name": "테슬라_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.24150419235229",
+        "4.15459012985229",
+        "4.06999111175537"
+      ]
+    },
+    {
+      "name": "테슬라_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "1.59266698360443",
+        "1.59266698360443",
+        "1.59266698360443"
+      ]
+    },
+    {
+      "name": "엔비디아_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "-1.32979345321655",
+        "-1.33463859558105",
+        "-1.34077858924866"
+      ]
+    },
+    {
+      "name": "엔비디아_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.466949552297592",
+        "0.467866539955139",
+        "0.466643184423447"
+      ]
+    },
+    {
+      "name": "코스트코_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "32.0553817749023",
+        "31.5537605285645",
+        "31.0798568725586"
+      ]
+    },
+    {
+      "name": "코스트코_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "37.7096633911133",
+        "38.7013168334961",
+        "38.092643737793"
+      ]
+    },
+    {
+      "name": "넷플릭스_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "-1.38758099079132",
+        "-1.25232970714569",
+        "-1.10283362865448"
+      ]
+    },
+    {
+      "name": "넷플릭스_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.09428596496582",
+        "4.0357141494751",
+        "3.99142909049988"
+      ]
+    },
+    {
+      "name": "페이팔_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "38.2495765686035",
+        "38.390209197998",
+        "38.5216407775879"
+      ]
+    },
+    {
+      "name": "페이팔_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "36.7099990844727",
+        "36.7099990844727",
+        "36.7099990844727"
+      ]
+    },
+    {
+      "name": "인텔_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "9.99589538574219",
+        "9.98874855041504",
+        "9.9790735244751"
+      ]
+    },
+    {
+      "name": "인텔_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.4640626907349",
+        "11.4052114486694",
+        "11.3228197097778"
+      ]
+    },
+    {
+      "name": "시스코_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.5296478271484",
+        "11.5409603118896",
+        "11.5458707809448"
+      ]
+    },
+    {
+      "name": "시스코_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "14.3755435943604",
+        "14.0375337600708",
+        "13.7922945022583"
+      ]
+    },
+    {
+      "name": "컴캐스트_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "5.68314027786255",
+        "5.70647859573364",
+        "5.72856044769287"
+      ]
+    },
+    {
+      "name": "컴캐스트_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "6.36806488037109",
+        "6.45284748077393",
+        "6.48110866546631"
+      ]
+    },
+    {
+      "name": "펩시코_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "36.4890289306641",
+        "36.390380859375",
+        "36.2914581298828"
+      ]
+    },
+    {
+      "name": "펩시코_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "34.0146789550781",
+        "34.091064453125",
+        "33.9617919921875"
+      ]
+    },
+    {
+      "name": "암젠_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "53.4846153259277",
+        "53.3325386047363",
+        "53.1869621276855"
+      ]
+    },
+    {
+      "name": "암젠_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "50.8277626037598",
+        "50.1231918334961",
+        "49.5511474609375"
+      ]
+    },
+    {
+      "name": "허니웰 인터내셔널_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "19.0933666229248",
+        "19.0345764160156",
+        "18.9786682128906"
+      ]
+    },
+    {
+      "name": "허니웰 인터내셔널_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "26.7021617889404",
+        "26.6152057647705",
+        "26.3357067108154"
+      ]
+    },
+    {
+      "name": "스타벅스_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.4440069198608",
+        "11.4092702865601",
+        "11.3748722076416"
+      ]
+    },
+    {
+      "name": "스타벅스_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "14.2931241989136",
+        "14.2778720855713",
+        "14.4341888427734"
+      ]
+    },
+    {
+      "name": "몬델리즈_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.6710195541382",
+        "11.6491212844849",
+        "11.6279649734497"
+      ]
+    },
+    {
+      "name": "몬델리즈_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "12.4166202545166",
+        "12.4166202545166",
+        "12.2977428436279"
+      ]
+    },
+    {
+      "name": "마이크론_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "3.88963985443115",
+        "3.84608507156372",
+        "3.79519295692444"
+      ]
+    },
+    {
+      "name": "마이크론_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "15.2315998077393",
+        "15.2511768341064",
+        "14.9281396865845"
+      ]
+    },
+    {
+      "name": "브로드컴_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "-4.09866380691528",
+        "-4.03471708297729",
+        "-3.9789822101593"
+      ]
+    },
+    {
+      "name": "브로드컴_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "1.15007412433624",
+        "1.15007412433624",
+        "1.15007412433624"
+      ]
+    },
+    {
+      "name": "어도비_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "35.2883415222168",
+        "35.0932884216309",
+        "34.8928833007812"
+      ]
+    },
+    {
+      "name": "어도비_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "35.9900016784668",
+        "36.0999984741211",
+        "36.9500007629395"
+      ]
+    },
+    {
+      "name": "텍사스 인스트루먼트_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "17.9143409729004",
+        "17.9207077026367",
+        "17.9269771575928"
+      ]
+    },
+    {
+      "name": "텍사스 인스트루먼트_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "21.2983741760254",
+        "21.5612316131592",
+        "21.2022018432617"
+      ]
+    },
+    {
+      "name": "AMD_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "32.3731002807617",
+        "32.2214508056641",
+        "32.0709915161133"
+      ]
+    },
+    {
+      "name": "AMD_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "34.7799987792969",
+        "34.7000007629395",
+        "33.689998626709"
+      ]
+    },
+    {
+      "name": "어플라이드 머티리얼즈_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "12.4450578689575",
+        "12.3995237350464",
+        "12.3494291305542"
+      ]
+    },
+    {
+      "name": "어플라이드 머티리얼즈_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "13.4195127487183",
+        "13.5444555282593",
+        "13.2578382492065"
+      ]
+    },
+    {
+      "name": "S&P 500 ETF_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "79.4834442138672",
+        "79.416130065918",
+        "79.3351058959961"
+      ]
+    },
+    {
+      "name": "S&P 500 ETF_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "91.8644256591797",
+        "91.7662734985352",
+        "90.8336791992188"
+      ]
+    },
+    {
+      "name": "QQQ ETF_Predicted",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "21.9092864990234",
+        "21.9171943664551",
+        "21.9191741943359"
+      ]
+    },
+    {
+      "name": "QQQ ETF_Actual",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "36.6803855895996",
+        "36.7836952209473",
+        "36.4307441711426"
+      ]
+    }
+  ],
+  "column_count": 56,
+  "row_count": 7049
+}

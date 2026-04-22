@@ -1,0 +1,147 @@
+{
+  "table": "llm_decision_logs",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "2",
+        "3",
+        "4"
+      ]
+    },
+    {
+      "name": "decision_date",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-08",
+        "2026-03-08",
+        "2026-03-08"
+      ]
+    },
+    {
+      "name": "ticker",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "AMAT",
+        "TXN",
+        "CMCSA"
+      ]
+    },
+    {
+      "name": "stock_name",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "어플라이드 머티리얼즈",
+        "텍사스 인스트루먼트",
+        "컴캐스트"
+      ]
+    },
+    {
+      "name": "decision",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "HOLD",
+        "HOLD",
+        "BUY"
+      ]
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "골든크로스가 발생했으나 현재가($324.74)가 SMA20($364.78) 대비 약 11% 하회하고 MACD도 매수신호가 아니어서 골든크로스의 유효성이 의심됩니다. RSI 26으로",
+        "RSI 2.44는 극단적 과매도로 데이터 이상치 가능성이 있으며, 현재가($193.23)가 SMA20($212.39) 대비 약 9% 하회하고 MACD가 강한 하락 신호(-5.0 v",
+        "4종목 중 유일하게 MACD 매수신호가 확인되었고, 현재가($31.91)가 SMA20($31.36)과 SMA50($30.55) 위에 위치하여 골든크로스가 유효합니다. RSI 58로"
+      ]
+    },
+    {
+      "name": "market_analysis",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 ",
+        "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 ",
+        "VIX 29.5로 시장 공포가 높은 상태이며, 매수 후보 4종목 중 3종목(AMAT, TXN, MU)이 반도체 섹터로 과도하게 집중되어 있어 섹터 리스크 관리가 필요합니다. 높은 "
+      ]
+    },
+    {
+      "name": "composite_score",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.5036",
+        "0.4536",
+        "0.41"
+      ]
+    },
+    {
+      "name": "rise_probability",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "13.09",
+        "8.65",
+        "8.52"
+      ]
+    },
+    {
+      "name": "rsi",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "26.19",
+        "2.44",
+        "58.12"
+      ]
+    },
+    {
+      "name": "adx",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "30.5",
+        "32.87",
+        "15.98"
+      ]
+    },
+    {
+      "name": "vix_value",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "29.49",
+        "29.49",
+        "29.49"
+      ]
+    },
+    {
+      "name": "created_at",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-08T01:12:31.133949+00:00",
+        "2026-03-08T01:12:31.407764+00:00",
+        "2026-03-08T01:12:31.714396+00:00"
+      ]
+    },
+    {
+      "name": "updated_at",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2026-03-08T10:54:11.25741+00:00",
+        "2026-03-08T10:54:11.536691+00:00",
+        "2026-03-08T10:54:11.745297+00:00"
+      ]
+    }
+  ],
+  "column_count": 14,
+  "row_count": 77
+}

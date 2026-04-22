@@ -1,0 +1,623 @@
+{
+  "table": "economic_and_stock_data",
+  "columns": [
+    {
+      "name": "id",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "1",
+        "2",
+        "3"
+      ]
+    },
+    {
+      "name": "날짜",
+      "type": "text",
+      "nullable": false,
+      "sample_values": [
+        "2006-01-03",
+        "2006-01-04",
+        "2006-01-05"
+      ]
+    },
+    {
+      "name": "나스닥 종합지수",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "2243.74",
+        "2263.46",
+        "2276.87"
+      ]
+    },
+    {
+      "name": "S&P 500 지수",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "1268.80004882812",
+        "1273.4599609375",
+        "1273.47998046875"
+      ]
+    },
+    {
+      "name": "금 가격",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "530.700012207031",
+        "533.900024414062",
+        "526.299987792969"
+      ]
+    },
+    {
+      "name": "달러 인덱스",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "89.8399963378906",
+        "89.1399993896484",
+        "89.3300018310547"
+      ]
+    },
+    {
+      "name": "나스닥 100",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "1679.93005371094",
+        "1695.82995605469",
+        "1705.2900390625"
+      ]
+    },
+    {
+      "name": "S&P 500 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "88.4903564453125",
+        "88.909423828125",
+        "88.9653091430664"
+      ]
+    },
+    {
+      "name": "QQQ ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "35.536376953125",
+        "35.9062767028809",
+        "36.0611228942871"
+      ]
+    },
+    {
+      "name": "러셀 2000 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "52.6967391967773",
+        "52.9832572937012",
+        "53.2697792053223"
+      ]
+    },
+    {
+      "name": "다우 존스 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "70.3557586669922",
+        "70.6220550537109",
+        "70.7129745483398"
+      ]
+    },
+    {
+      "name": "VIX 지수",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.1400003433228",
+        "11.3699998855591",
+        "11.3100004196167"
+      ]
+    },
+    {
+      "name": "닛케이 225",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "16361.5400390625",
+        "16425.369140625"
+      ]
+    },
+    {
+      "name": "상해종합",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "1180.96301269531",
+        "1197.26904296875"
+      ]
+    },
+    {
+      "name": "항셍",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "14944.76953125",
+        "15200.0595703125",
+        "15271.1298828125"
+      ]
+    },
+    {
+      "name": "영국 FTSE",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "5681.5",
+        "5714.60009765625",
+        "5691.2001953125"
+      ]
+    },
+    {
+      "name": "독일 DAX",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "5460.68017578125",
+        "5523.6201171875",
+        "5516.52978515625"
+      ]
+    },
+    {
+      "name": "프랑스 CAC 40",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4776.97998046875",
+        "4838.52001953125",
+        "4835.08984375"
+      ]
+    },
+    {
+      "name": "미국 전체 채권시장 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "55.6155738830566",
+        "55.7482604980469",
+        "55.7482604980469"
+      ]
+    },
+    {
+      "name": "TIPS ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "58.7105827331543",
+        "58.7162132263184",
+        "58.5453109741211"
+      ]
+    },
+    {
+      "name": "투자등급 회사채 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "50.8176383972168",
+        "50.8176383972168",
+        "50.8598480224609"
+      ]
+    },
+    {
+      "name": "달러/엔",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "115.980003356934",
+        "116.220001220703",
+        "116"
+      ]
+    },
+    {
+      "name": "달러/위안",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "8.06620025634766",
+        "8.06700038909912",
+        "8.06369972229004"
+      ]
+    },
+    {
+      "name": "미국 리츠 ETF",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "27.3663787841797",
+        "27.5690536499023",
+        "27.7807559967041"
+      ]
+    },
+    {
+      "name": "애플",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "2.24949741363525",
+        "2.25611710548401",
+        "2.23836278915405"
+      ]
+    },
+    {
+      "name": "마이크로소프트",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "18.8153858184814",
+        "18.9065189361572",
+        "18.920539855957"
+      ]
+    },
+    {
+      "name": "아마존",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "2.37899994850159",
+        "2.36249995231628",
+        "2.3824999332428"
+      ]
+    },
+    {
+      "name": "구글 A",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "10.8523015975952",
+        "11.1018972396851",
+        "11.2515048980713"
+      ]
+    },
+    {
+      "name": "구글 C",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "10.8013095855713",
+        "11.0497303009033",
+        "11.1986360549927"
+      ]
+    },
+    {
+      "name": "메타",
+      "type": "unknown",
+      "nullable": true,
+      "sample_values": []
+    },
+    {
+      "name": "테슬라",
+      "type": "unknown",
+      "nullable": true,
+      "sample_values": []
+    },
+    {
+      "name": "엔비디아",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.292091637849808",
+        "0.300269186496735",
+        "0.307070344686508"
+      ]
+    },
+    {
+      "name": "코스트코",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "34.0600662231445",
+        "34.1692581176758",
+        "33.9645614624023"
+      ]
+    },
+    {
+      "name": "넷플릭스",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "3.72142910957336",
+        "3.57142901420593",
+        "3.56142902374268"
+      ]
+    },
+    {
+      "name": "페이팔",
+      "type": "unknown",
+      "nullable": true,
+      "sample_values": []
+    },
+    {
+      "name": "인텔",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "14.9770727157593",
+        "15.1762218475342",
+        "15.3870849609375"
+      ]
+    },
+    {
+      "name": "시스코",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.5653886795044",
+        "11.8304977416992",
+        "12.1618795394897"
+      ]
+    },
+    {
+      "name": "컴캐스트",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "6.17730569839478",
+        "6.21263027191162",
+        "6.22205400466919"
+      ]
+    },
+    {
+      "name": "펩시코",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "34.9606742858887",
+        "34.9431228637695",
+        "34.7383728027344"
+      ]
+    },
+    {
+      "name": "암젠",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "56.0598411560059",
+        "55.7947425842285",
+        "54.985523223877"
+      ]
+    },
+    {
+      "name": "허니웰 인터내셔널",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "23.1416873931885",
+        "23.0489978790283",
+        "23.0366611480713"
+      ]
+    },
+    {
+      "name": "스타벅스",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.7692365646362",
+        "12.0742425918579",
+        "12.0513620376587"
+      ]
+    },
+    {
+      "name": "몬델리즈",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "11.4118747711182",
+        "11.3711938858032",
+        "11.3264379501343"
+      ]
+    },
+    {
+      "name": "마이크론",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "13.2248649597168",
+        "13.7534675598145",
+        "13.8807239532471"
+      ]
+    },
+    {
+      "name": "브로드컴",
+      "type": "unknown",
+      "nullable": true,
+      "sample_values": []
+    },
+    {
+      "name": "어도비",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "38.5200004577637",
+        "38.4199981689453",
+        "38.0699996948242"
+      ]
+    },
+    {
+      "name": "텍사스 인스트루먼트",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "21.2899951934814",
+        "21.482141494751",
+        "21.8664360046387"
+      ]
+    },
+    {
+      "name": "AMD",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "32.4000015258789",
+        "32.560001373291",
+        "33.6800003051758"
+      ]
+    },
+    {
+      "name": "어플라이드 머티리얼즈",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "13.4506120681763",
+        "13.568021774292",
+        "13.7221193313599"
+      ]
+    },
+    {
+      "name": "10년 기대 인플레이션율",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "2.34",
+        "2.35",
+        "2.32"
+      ]
+    },
+    {
+      "name": "장단기 금리차",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "0.03",
+        "0.05",
+        "0.04"
+      ]
+    },
+    {
+      "name": "기준금리",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.29",
+        "4.29",
+        "4.29"
+      ]
+    },
+    {
+      "name": "미시간대 소비자 심리지수",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "91.2",
+        "91.2",
+        "91.2"
+      ]
+    },
+    {
+      "name": "실업률",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.7",
+        "4.7",
+        "4.7"
+      ]
+    },
+    {
+      "name": "2년 만기 미국 국채 수익률",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.34",
+        "4.31",
+        "4.32"
+      ]
+    },
+    {
+      "name": "10년 만기 미국 국채 수익률",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "4.37",
+        "4.36",
+        "4.36"
+      ]
+    },
+    {
+      "name": "금융스트레스지수",
+      "type": "float",
+      "nullable": true,
+      "sample_values": []
+    },
+    {
+      "name": "개인 소비 지출",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "9071.6",
+        "9071.6",
+        "9071.6"
+      ]
+    },
+    {
+      "name": "소비자 물가지수",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "199.3",
+        "199.3",
+        "199.3"
+      ]
+    },
+    {
+      "name": "5년 변동금리 모기지",
+      "type": "float",
+      "nullable": true,
+      "sample_values": [
+        "6.21"
+      ]
+    },
+    {
+      "name": "미국 달러 환율",
+      "type": "integer",
+      "nullable": false,
+      "sample_values": [
+        "100",
+        "100",
+        "100"
+      ]
+    },
+    {
+      "name": "통화 공급량 M2",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "6730.1",
+        "6730.1",
+        "6730.1"
+      ]
+    },
+    {
+      "name": "가계 부채 비율",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "14.989443",
+        "14.989443",
+        "14.989443"
+      ]
+    },
+    {
+      "name": "GDP 성장률",
+      "type": "float",
+      "nullable": false,
+      "sample_values": [
+        "16353.835",
+        "16353.835",
+        "16353.835"
+      ]
+    }
+  ],
+  "column_count": 64,
+  "row_count": 7139
+}
