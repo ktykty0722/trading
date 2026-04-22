@@ -1,10 +1,9 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from typing import List, Optional, Union, Literal, get_type_hints
+from typing import List
 import os
 from dotenv import load_dotenv
 
-# .env 파일 로드
 load_dotenv()
 
 class Settings(BaseSettings):
@@ -12,13 +11,14 @@ class Settings(BaseSettings):
     PROJECT_DESCRIPTION: str = "해외주식 잔고 조회 및 주식 예측 API"
     PROJECT_VERSION: str = "1.0.0"
 
-    # DEBUG 설정 추가
     DEBUG: bool = Field(default=False, description="디버그 모드 활성화 여부")
 
-    CORS_ORIGINS: List[str] = ["*"]
+    # 운영환경에서는 .env의 CORS_ORIGINS에 실제 도메인 지정
+    # 예) CORS_ORIGINS=https://yourdomain.com,http://localhost:3000
+    CORS_ORIGINS: List[str] = Field(default=["*"], description="허용할 CORS 출처 목록")
 
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY")
+    SUPABASE_URL: str = Field(default="", description="Supabase 프로젝트 URL")
+    SUPABASE_KEY: str = Field(default="", description="Supabase anon key")
 
     # 한국투자증권 API 설정
     KIS_USE_MOCK: bool = Field(default=True, description="모의투자 사용 여부")
@@ -32,15 +32,15 @@ class Settings(BaseSettings):
         description="한국투자증권 API 기본 URL (실제투자용)"
     )
 
-    # 모의투자 계좌 정보
+    # 모의투자 계좌 정보 (기본값 없음 - 반드시 .env에서 설정)
     KIS_MOCK_APPKEY: str = Field(default="", description="모의투자 앱키")
     KIS_MOCK_APPSECRET: str = Field(default="", description="모의투자 앱시크릿")
-    KIS_MOCK_CANO: str = Field(default="50173046", description="모의투자 계좌번호")
+    KIS_MOCK_CANO: str = Field(default="", description="모의투자 계좌번호")
 
-    # 실제투자 계좌 정보
+    # 실제투자 계좌 정보 (기본값 없음 - 반드시 .env에서 설정)
     KIS_REAL_APPKEY: str = Field(default="", description="실제투자 앱키")
     KIS_REAL_APPSECRET: str = Field(default="", description="실제투자 앱시크릿")
-    KIS_REAL_CANO: str = Field(default="64856431", description="실제투자 계좌번호")
+    KIS_REAL_CANO: str = Field(default="", description="실제투자 계좌번호")
 
     # .env 호환용 (직접 사용하지 않고 property로 대체)
     KIS_APPKEY: str = Field(default="", description="한국투자증권 API 앱키")
@@ -48,9 +48,10 @@ class Settings(BaseSettings):
     KIS_CANO: str = Field(default="", description="계좌번호 앞 8자리")
     KIS_ACNT_PRDT_CD: str = Field(default="01", description="계좌번호 뒤 2자리")
 
-    ALPHA_VANTAGE_API_KEY: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-    TR_ID: str = os.getenv("TR_ID")
+    FRED_API_KEY: str = Field(default="", description="FRED API 키")
+    ALPHA_VANTAGE_API_KEY: str = Field(default="", description="AlphaVantage API 키")
+    ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic Claude API 키")
+    TR_ID: str = Field(default="", description="KIS 거래 ID")
 
     @property
     def kis_base_url(self) -> str:

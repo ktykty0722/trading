@@ -1,3 +1,4 @@
+import logging
 import requests
 import json
 import time
@@ -7,6 +8,45 @@ from app.core.config import settings
 from app.db.supabase import supabase
 from threading import Lock
 from app.services.auth_service import parse_expiration_date
+
+logger = logging.getLogger(__name__)
+
+# (exchange_group, is_buy, is_virtual) → tr_id
+_ORDER_TR_IDS = {
+    ("US",  True,  True):  "VTTT1002U",
+    ("US",  False, True):  "VTTT1001U",
+    ("US",  True,  False): "TTTT1002U",
+    ("US",  False, False): "TTTT1006U",
+    ("JP",  True,  True):  "VTTS0308U",
+    ("JP",  False, True):  "VTTS0307U",
+    ("JP",  True,  False): "TTTS0308U",
+    ("JP",  False, False): "TTTS0307U",
+    ("SH",  True,  True):  "VTTS0202U",
+    ("SH",  False, True):  "VTTS1005U",
+    ("SH",  True,  False): "TTTS0202U",
+    ("SH",  False, False): "TTTS1005U",
+    ("HK",  True,  True):  "VTTS1002U",
+    ("HK",  False, True):  "VTTS1001U",
+    ("HK",  True,  False): "TTTS1002U",
+    ("HK",  False, False): "TTTS1001U",
+    ("SZ",  True,  True):  "VTTS0305U",
+    ("SZ",  False, True):  "VTTS0304U",
+    ("SZ",  True,  False): "TTTS0305U",
+    ("SZ",  False, False): "TTTS0304U",
+    ("VN",  True,  True):  "VTTS0311U",
+    ("VN",  False, True):  "VTTS0310U",
+    ("VN",  True,  False): "TTTS0311U",
+    ("VN",  False, False): "TTTS0310U",
+}
+
+_EXCHANGE_GROUP = {
+    "NASD": "US", "NYSE": "US", "AMEX": "US",
+    "TKSE": "JP",
+    "SHAA": "SH",
+    "SEHK": "HK",
+    "SZAA": "SZ",
+    "HASE": "VN", "VNSE": "VN",
+}
 
 # 메모리에 토큰 정보 저장 (캐싱)
 _token_cache = {
@@ -25,20 +65,20 @@ def get_access_token():
     
     # 메모리에 캐시된 토큰이 있고 유효하면 그것을 사용
     if _token_cache["access_token"] and _token_cache["expires_at"] and now < _token_cache["expires_at"]:
-        print("메모리에 캐시된 토큰 사용")
+        logger.debug("메모리에 캐시된 토큰 사용")
         return _token_cache["access_token"]
     
     # 1분 제한 체크 및 락 획득
     current_time = time.time()
     if current_time - _last_refresh_time < 60:
         time_to_wait = 60 - (current_time - _last_refresh_time)
-        print(f"1분 제한으로 {time_to_wait:.1f}초 대기")
+        logger.debug(f"1분 제한으로 {time_to_wait:.1f}초 대기")
         time.sleep(time_to_wait)
-    
+
     with _refresh_lock:  # 동시성 방지
         # 락 획득 후 다시 캐시 확인
         if _token_cache["access_token"] and _token_cache["expires_at"] and now < _token_cache["expires_at"]:
-            print("락 내에서 캐시된 토큰 사용")
+            logger.debug("락 내에서 캐시된 토큰 사용")
             return _token_cache["access_token"]
         
         try:
@@ -52,31 +92,30 @@ def get_access_token():
                 expiration_time = parse_expiration_date(token_data["expiration_time"])
                 
                 if now < expiration_time:  # 토큰이 아직 유효한 경우
-                    print(f"기존 토큰 사용 - 만료까지 남은 시간: {(expiration_time - now)}")
+                    logger.debug(f"기존 토큰 사용 - 만료까지 남은 시간: {(expiration_time - now)}")
                     _token_cache["access_token"] = token_data["access_token"]
                     _token_cache["expires_at"] = expiration_time
                     _last_refresh_time = current_time
                     return token_data["access_token"]
-                
-                print("토큰 만료됨, 갱신 필요")
-                # 토큰이 만료된 경우 갱신
+
+                logger.info("토큰 만료됨, 갱신 필요")
                 token = refresh_token_with_retry(token_data["id"])
                 _token_cache["access_token"] = token
                 _token_cache["expires_at"] = now + timedelta(days=1)
                 _last_refresh_time = current_time
                 return token
             else:
-                print("토큰 레코드 없음, 새로 생성")
+                logger.info("토큰 레코드 없음, 새로 생성")
                 token = refresh_token_with_retry()
                 _token_cache["access_token"] = token
                 _token_cache["expires_at"] = now + timedelta(days=1)
                 _last_refresh_time = current_time
                 return token
-                
+
         except Exception as e:
-            print(f"토큰 조회 오류: {str(e)}")
+            logger.error(f"토큰 조회 오류: {e}")
             if _token_cache["access_token"]:
-                print("DB 조회 오류 - 메모리에 캐시된 토큰 사용")
+                logger.warning("DB 조회 오류 - 메모리에 캐시된 토큰 사용")
                 return _token_cache["access_token"]
             raise Exception(f"토큰 발급 실패: {str(e)}")
 
@@ -111,18 +150,18 @@ def refresh_token_with_retry(record_id=None, max_retries=3):
             # 레코드 ID가 있으면 업데이트, 없으면 새로 생성
             if record_id:
                 supabase.table("access_tokens").update(token_data).eq("id", record_id).execute()
-                print("토큰 업데이트 완료")
+                logger.info("토큰 업데이트 완료")
             else:
                 supabase.table("access_tokens").insert(token_data).execute()
-                print("새 토큰 레코드 생성 완료")
-            
+                logger.info("새 토큰 레코드 생성 완료")
+
             return access_token
-            
+
         except Exception as e:
-            print(f"토큰 갱신 오류 (시도 {attempt+1}/{max_retries}): {str(e)}")
+            logger.error(f"토큰 갱신 오류 (시도 {attempt+1}/{max_retries}): {e}")
             if "EGW00133" in str(e) and attempt < max_retries - 1:
-                print("1분 제한 에러 발생, 61초 대기 후 재시도")
-                time.sleep(61)  # 1분 이상 대기
+                logger.warning("1분 제한 에러 발생, 61초 대기 후 재시도")
+                time.sleep(61)
             else:
                 raise
 
@@ -164,7 +203,7 @@ def get_domestic_balance():
             # API 응답에 오류가 있고, 재시도 가능한 경우
             if 'rt_cd' in result and result['rt_cd'] != '0' and attempt < max_retries - 1:
                 msg1 = result.get('msg1', '알 수 없는 오류')
-                print(f"API 오류: {result.get('msg_cd', 'N/A')} - {msg1}. 재시도...")
+                logger.warning(f"API 오류: {result.get('msg_cd', 'N/A')} - {msg1}. 재시도...")
                 if "초당" in msg1:
                     time.sleep(2)
                 else:
@@ -176,7 +215,7 @@ def get_domestic_balance():
             return result
 
         except Exception as e:
-            print(f"잔고 조회 중 오류 발생 (시도 {attempt+1}/{max_retries}): {str(e)}")
+            logger.error(f"잔고 조회 중 오류 발생 (시도 {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(2)
             else:
@@ -220,8 +259,7 @@ def get_overseas_balance(ovrs_excg_cd="NASD"):
             # API 응답에 오류가 있고, 재시도 가능한 경우
             if 'rt_cd' in result and result['rt_cd'] != '0' and attempt < max_retries - 1:
                 msg1 = result.get('msg1', '알 수 없는 오류')
-                print(f"API 오류: {result.get('msg_cd', 'N/A')} - {msg1}. 재시도...")
-                # 초당 거래건수 초과인 경우 대기만, 그 외는 토큰 갱신
+                logger.warning(f"API 오류: {result.get('msg_cd', 'N/A')} - {msg1}. 재시도...")
                 if "초당" in msg1:
                     time.sleep(2)
                 else:
@@ -233,7 +271,7 @@ def get_overseas_balance(ovrs_excg_cd="NASD"):
             return result
 
         except Exception as e:
-            print(f"잔고 조회 중 오류 발생 (시도 {attempt+1}/{max_retries}): {str(e)}")
+            logger.error(f"잔고 조회 중 오류 발생 (시도 {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(2)
             else:
@@ -254,13 +292,13 @@ def get_all_overseas_balances():
                 if holdings:
                     all_holdings.extend(holdings)
             else:
-                print(f"{exchange} 거래소 잔고 조회 실패: {result.get('msg1', '알 수 없는 오류')}")
-                
+                logger.warning(f"{exchange} 거래소 잔고 조회 실패: {result.get('msg1', '알 수 없는 오류')}")
+
             # API 요청 간 지연 (KIS 초당 거래건수 제한 방지)
             time.sleep(1)
-            
+
         except Exception as e:
-            print(f"{exchange} 거래소 잔고 조회 중 오류: {str(e)}")
+            logger.error(f"{exchange} 거래소 잔고 조회 중 오류: {e}")
     
     # 통합된 잔고 정보 반환
     if all_holdings:
@@ -329,7 +367,7 @@ def overseas_order_resv(order_data):
         
         return result
     except Exception as e:
-        print(f"예약주문 접수 중 오류 발생: {str(e)}")
+        logger.error(f"예약주문 접수 중 오류 발생: {e}")
         raise
 
 def inquire_psamount(params):
@@ -371,7 +409,7 @@ def inquire_psamount(params):
         
         return result
     except Exception as e:
-        print(f"매수가능금액 조회 중 오류 발생: {str(e)}")
+        logger.error(f"매수가능금액 조회 중 오류 발생: {e}")
         raise
 
 # 추가: 해외주식 현재체결가 조회
@@ -393,7 +431,7 @@ def get_current_price(params):
         
         return result
     except Exception as e:
-        print(f"현재체결가 조회 중 오류 발생: {str(e)}")
+        logger.error(f"현재체결가 조회 중 오류 발생: {e}")
         raise
 
 def get_overseas_nccs(params):
@@ -428,7 +466,7 @@ def get_overseas_nccs(params):
         
         return result
     except Exception as e:
-        print(f"미체결내역 조회 중 오류 발생: {str(e)}")
+        logger.error(f"미체결내역 조회 중 오류 발생: {e}")
         raise
 
 def get_overseas_order_detail(params):
@@ -449,16 +487,9 @@ def get_overseas_order_detail(params):
             "tr_id": tr_id,
         }
         
-        # 디버깅 정보
-        print(f"API 요청: {url}")
-        print(f"헤더: {headers}")
-        print(f"파라미터: {params}")
-        
+        logger.debug(f"API 요청: {url}, 파라미터: {params}")
         response = requests.get(url, headers=headers, params=params)
-        
-        # 응답 확인
-        print(f"API 응답 상태 코드: {response.status_code}")
-        print(f"API 응답 본문: {response.text[:200] if response.text else '비어있음'}")
+        logger.debug(f"API 응답 상태 코드: {response.status_code}")
         
         if response.status_code == 404:
             # 404 오류인 경우 빈 결과 반환
@@ -492,7 +523,7 @@ def get_overseas_order_detail(params):
                 "output": []
             }
     except Exception as e:
-        print(f"주문체결내역 조회 중 오류 발생: {str(e)}")
+        logger.error(f"주문체결내역 조회 중 오류 발생: {e}")
         # 예외 발생 시 빈 결과 반환
         return {
             "rt_cd": "0", 
@@ -537,14 +568,9 @@ def get_overseas_order_resv_list(params):
             "tr_id": tr_id,
         }
         
-        # 디버깅 정보
-        print(f"예약주문조회 API 요청: {url}")
-        print(f"파라미터: {params}")
-        
+        logger.debug(f"예약주문조회 API 요청: {url}, 파라미터: {params}")
         response = requests.get(url, headers=headers, params=params)
-        
-        # 응답 확인
-        print(f"API 응답 상태 코드: {response.status_code}")
+        logger.debug(f"API 응답 상태 코드: {response.status_code}")
         
         if response.status_code != 200:
             return {
@@ -573,7 +599,7 @@ def get_overseas_order_resv_list(params):
                 "output": []
             }
     except Exception as e:
-        print(f"예약주문조회 중 오류 발생: {str(e)}")
+        logger.error(f"예약주문조회 중 오류 발생: {e}")
         return {
             "rt_cd": "1", 
             "msg_cd": "ERROR",
@@ -603,49 +629,15 @@ def order_overseas_stock(order_data):
         ovrs_excg_cd = order_data.get("OVRS_EXCG_CD", "")
         
         # tr_id 결정 (매수/매도 및 거래소에 따라 다름)
-        if ovrs_excg_cd in ["NASD", "NYSE", "AMEX"]:
-            # 미국 주식
-            if is_buy:
-                tr_id = "VTTT1002U" if is_virtual else "TTTT1002U"  # 미국 매수
-            else:
-                tr_id = "VTTT1001U" if is_virtual else "TTTT1006U"  # 미국 매도
-        elif ovrs_excg_cd == "TKSE":
-            # 일본 주식
-            if is_buy:
-                tr_id = "VTTS0308U" if is_virtual else "TTTS0308U"  # 일본 매수
-            else:
-                tr_id = "VTTS0307U" if is_virtual else "TTTS0307U"  # 일본 매도
-        elif ovrs_excg_cd == "SHAA":
-            # 상해 주식
-            if is_buy:
-                tr_id = "VTTS0202U" if is_virtual else "TTTS0202U"  # 상해 매수
-            else:
-                tr_id = "VTTS1005U" if is_virtual else "TTTS1005U"  # 상해 매도
-        elif ovrs_excg_cd == "SEHK":
-            # 홍콩 주식
-            if is_buy:
-                tr_id = "VTTS1002U" if is_virtual else "TTTS1002U"  # 홍콩 매수
-            else:
-                tr_id = "VTTS1001U" if is_virtual else "TTTS1001U"  # 홍콩 매도
-        elif ovrs_excg_cd == "SZAA":
-            # 심천 주식
-            if is_buy:
-                tr_id = "VTTS0305U" if is_virtual else "TTTS0305U"  # 심천 매수
-            else:
-                tr_id = "VTTS0304U" if is_virtual else "TTTS0304U"  # 심천 매도
-        elif ovrs_excg_cd in ["HASE", "VNSE"]:
-            # 베트남 주식
-            if is_buy:
-                tr_id = "VTTS0311U" if is_virtual else "TTTS0311U"  # 베트남 매수
-            else:
-                tr_id = "VTTS0310U" if is_virtual else "TTTS0310U"  # 베트남 매도
-        else:
+        group = _EXCHANGE_GROUP.get(ovrs_excg_cd)
+        if not group:
             return {
                 "rt_cd": "1",
                 "msg_cd": "INVALID_EXCHANGE",
                 "msg1": f"지원되지 않는 거래소 코드: {ovrs_excg_cd}",
                 "output": {}
             }
+        tr_id = _ORDER_TR_IDS[(group, is_buy, is_virtual)]
         
         # API 요청 URL 및 헤더 설정
         url = f"{settings.kis_base_url}/uapi/overseas-stock/v1/trading/order"
@@ -670,17 +662,9 @@ def order_overseas_stock(order_data):
         if "ORD_DVSN" not in request_body:
             request_body["ORD_DVSN"] = "00"  # 지정가
         
-        # 디버깅 정보 출력
-        print(f"해외주식 주문 API 요청: {url}")
-        print(f"헤더: {headers}")
-        print(f"요청 본문: {request_body}")
-        
-        # API 호출
+        logger.debug(f"해외주식 주문 API 요청: {url}, 본문: {request_body}")
         response = requests.post(url, headers=headers, json=request_body)
-        
-        # 응답 확인
-        print(f"API 응답 상태 코드: {response.status_code}")
-        print(f"API 응답 본문: {response.text[:200] if response.text else '비어있음'}")
+        logger.debug(f"API 응답 상태 코드: {response.status_code}")
         
         # 응답 처리
         if response.status_code != 200:
@@ -704,9 +688,7 @@ def order_overseas_stock(order_data):
                 "output": {}
             }
     except Exception as e:
-        print(f"해외주식 주문 중 오류 발생: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        logger.exception(f"해외주식 주문 중 오류 발생: {e}")
         return {
             "rt_cd": "1", 
             "msg_cd": "ERROR",
@@ -827,9 +809,7 @@ def create_conditional_orders(params):
         }
         
     except Exception as e:
-        print(f"조건부 주문 생성 중 오류 발생: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        logger.exception(f"조건부 주문 생성 중 오류 발생: {e}")
         return {
             "rt_cd": "1",
             "msg_cd": "ERROR",
