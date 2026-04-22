@@ -50,7 +50,9 @@ class Settings(BaseSettings):
 
     FRED_API_KEY: str = Field(default="", description="FRED API 키")
     ALPHA_VANTAGE_API_KEY: str = Field(default="", description="AlphaVantage API 키")
-    ANTHROPIC_API_KEY: str = Field(default="", description="Anthropic Claude API 키")
+    OPENAI_API_KEY: str = Field(default="", description="OpenAI API 키")
+    TELEGRAM_BOT_TOKEN: str = Field(default="", description="Telegram Bot 토큰")
+    TELEGRAM_CHAT_ID: str = Field(default="", description="Telegram Chat ID")
     TR_ID: str = Field(default="", description="KIS 거래 ID")
 
     @property

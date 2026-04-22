@@ -1,62 +1,52 @@
 import json
+import logging
 import time
 from datetime import datetime
-import anthropic
+
+import openai
 from app.core.config import settings
 from app.db.supabase import supabase
 
-# 재시도 설정
-MAX_RETRIES = 3
-RETRY_DELAYS = [5, 15, 30]  # 재시도 간격 (초): 5초 → 15초 → 30초
-MODELS = ["claude-opus-4-7", "claude-sonnet-4-6"]  # Opus 실패 시 Sonnet 폴백
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES   = 3
+RETRY_DELAYS  = [5, 15, 30]
+MODELS        = ["gpt-4o", "gpt-4o-mini"]  # gpt-4o 실패 시 gpt-4o-mini 폴백
 
 
 def _save_llm_decision_logs(candidates: list, decision_map: dict, market_analysis: str, vix_value: float = None):
-    """LLM 판단 결과를 llm_decision_logs 테이블에 저장 (동일 날짜+티커면 업데이트)"""
     try:
         today = datetime.now().strftime("%Y-%m-%d")
         for candidate in candidates:
             ticker = candidate["ticker"]
             decision_data = decision_map.get(ticker, {})
             supabase.table("llm_decision_logs").upsert({
-                "decision_date": today,
-                "ticker": ticker,
-                "stock_name": candidate.get("stock_name"),
-                "decision": decision_data.get("decision", "N/A"),
-                "reason": decision_data.get("reason", ""),
-                "market_analysis": market_analysis,
-                "composite_score": candidate.get("composite_score"),
-                "rise_probability": candidate.get("rise_probability"),
-                "rsi": candidate.get("rsi"),
-                "adx": candidate.get("adx"),
-                "vix_value": vix_value,
-                "updated_at": datetime.now().isoformat(),
+                "decision_date":  today,
+                "ticker":         ticker,
+                "stock_name":     candidate.get("stock_name"),
+                "decision":       decision_data.get("decision", "N/A"),
+                "reason":         decision_data.get("reason", ""),
+                "market_analysis":market_analysis,
+                "composite_score":candidate.get("composite_score"),
+                "rise_probability":candidate.get("rise_probability"),
+                "rsi":            candidate.get("rsi"),
+                "adx":            candidate.get("adx"),
+                "vix_value":      vix_value,
+                "updated_at":     datetime.now().isoformat(),
             }, on_conflict="decision_date,ticker").execute()
-        print(f"  LLM 판단 로그 저장 완료: {len(candidates)}건")
-    except Exception as log_e:
-        print(f"  LLM 판단 로그 저장 실패: {log_e}")
+        logger.info(f"LLM 판단 로그 저장 완료: {len(candidates)}건")
+    except Exception as e:
+        logger.error(f"LLM 판단 로그 저장 실패: {e}")
 
 
 def review_buy_candidates(candidates: list, vix_value: float = None) -> dict:
     """
-    매수 후보 종목을 Claude API로 최종 검토합니다.
+    매수 후보 종목을 OpenAI API로 최종 검토합니다.
     LLM은 거부권만 있습니다 (BUY → HOLD로만 변경 가능, 새 종목 추가 불가).
     LLM 호출 실패 시 매수를 차단합니다 (Fail-Close).
-
-    Args:
-        candidates: get_combined_recommendations_with_technical_and_sentiment()의 results
-        vix_value: 현재 VIX 지수
-
-    Returns:
-        dict: {
-            "reviewed_candidates": [...],  # BUY 판정된 종목만
-            "held_candidates": [...],      # HOLD로 제외된 종목
-            "llm_reasoning": str,          # LLM 전체 분석
-            "raw_response": [...]          # LLM 원본 응답
-        }
     """
-    if not settings.ANTHROPIC_API_KEY:
-        print("  ANTHROPIC_API_KEY가 설정되지 않았습니다. LLM 검토 불가로 매수 차단.")
+    if not settings.OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY가 설정되지 않았습니다. LLM 검토 불가로 매수 차단.")
         return {
             "reviewed_candidates": [],
             "held_candidates": candidates,
@@ -72,24 +62,26 @@ def review_buy_candidates(candidates: list, vix_value: float = None) -> dict:
             "raw_response": []
         }
 
-    # 매수 후보 데이터를 프롬프트용으로 정리
     stock_summaries = []
     for i, c in enumerate(candidates, 1):
-        summary = f"""
+        rsi = c.get('rsi', 50)
+        rsi_note = '(과매도 반등)' if rsi < 30 else '(강세 진입)' if 50 <= rsi <= 65 else '(매수구간 아님)'
+        adx = c.get('adx')
+        adx_note = '(강한 추세)' if adx and adx > 25 else '(추세 약함)' if adx and adx < 20 else '(보통)'
+        stock_summaries.append(f"""
 {i}. {c.get('stock_name', 'N/A')} ({c.get('ticker', 'N/A')})
    - ML 예측: 상승확률 {c.get('rise_probability', 0):.2f}%, 예측가 ${c.get('predicted_price', 0):.2f} (현재가 ${c.get('last_price', 0):.2f})
    - 기술적 지표:
      골든크로스: {'✓' if c.get('golden_cross') else '✗'} (SMA20: {c.get('sma20', 0):.2f}, SMA50: {c.get('sma50', 0):.2f})
-     RSI: {c.get('rsi', 0):.2f} {'(과매도 반등)' if c.get('rsi', 50) < 30 else '(강세 진입)' if 50 <= c.get('rsi', 50) <= 65 else '(매수구간 아님)'}
+     RSI: {rsi:.2f} {rsi_note}
      MACD: {c.get('macd', 0):.4f}, Signal: {c.get('signal', 0):.4f}, 매수신호: {'✓' if c.get('macd_buy_signal') else '✗'}
    - 거래량: 5일 평균 대비 {c.get('volume_ratio', 'N/A')}배
-   - ADX(추세강도): {c.get('adx', 'N/A')} {'(강한 추세)' if c.get('adx') and c.get('adx') > 25 else '(추세 약함)' if c.get('adx') and c.get('adx') < 20 else '(보통)'}
+   - ADX(추세강도): {adx} {adx_note}
    - 감성분석: {c.get('sentiment_score', 'N/A')} (기사 {c.get('article_count', 0)}개)
    - 종합점수: {c.get('composite_score', 0):.4f}
-     (상승확률: {c.get('rise_score', 0)}, 기술: {c.get('tech_score', 0)}, 거래량: {c.get('volume_score', 0)}, ADX: {c.get('adx_score', 0)}, VIX: {c.get('vix_score', 0)})"""
-        stock_summaries.append(summary)
+     (상승확률: {c.get('rise_score', 0)}, 기술: {c.get('tech_score', 0)}, 거래량: {c.get('volume_score', 0)}, ADX: {c.get('adx_score', 0)}, VIX: {c.get('vix_score', 0)})""")
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today     = datetime.now().strftime("%Y-%m-%d")
     stocks_text = "\n".join(stock_summaries)
 
     prompt = f"""당신은 월스트리트 경력 20년의 미국 주식 트레이딩 전문가이자 최종 의사결정자입니다.
@@ -143,111 +135,97 @@ def review_buy_candidates(candidates: list, vix_value: float = None) -> dict:
   ]
 }}"""
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client     = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
     last_error = None
 
-    # 모델별 재시도: Opus 3회 → Sonnet 3회 (총 최대 6회)
     for model in MODELS:
         for attempt in range(MAX_RETRIES):
             try:
-                print(f"  LLM 호출 시도 {attempt + 1}/{MAX_RETRIES} (모델: {model})")
-                message = client.messages.create(
+                logger.info(f"LLM 호출 시도 {attempt + 1}/{MAX_RETRIES} (모델: {model})")
+                response = client.chat.completions.create(
                     model=model,
-                    max_tokens=2000,
+                    messages=[{"role": "user", "content": prompt}],
                     temperature=0,
-                    messages=[{"role": "user", "content": prompt}]
+                    max_tokens=2000,
+                    response_format={"type": "json_object"},
                 )
-
-                response_text = message.content[0].text.strip()
-                # JSON 파싱 (```json ... ``` 래핑 처리)
-                if response_text.startswith("```"):
-                    response_text = response_text.split("```")[1]
-                    if response_text.startswith("json"):
-                        response_text = response_text[4:]
+                response_text = response.choices[0].message.content.strip()
                 response_data = json.loads(response_text)
 
-                decisions = response_data.get("decisions", [])
+                decisions       = response_data.get("decisions", [])
                 market_analysis = response_data.get("market_analysis", "")
                 used_model_note = f" (폴백: {model})" if model != MODELS[0] else ""
+                decision_map    = {d["ticker"]: d for d in decisions}
 
-                # 티커별 판정 매핑
-                decision_map = {d["ticker"]: d for d in decisions}
-
-                reviewed = []
-                held = []
+                reviewed, held = [], []
                 for candidate in candidates:
-                    ticker = candidate["ticker"]
-                    decision = decision_map.get(ticker, {})
+                    ticker      = candidate["ticker"]
+                    decision    = decision_map.get(ticker, {})
                     llm_decision = decision.get("decision", "HOLD").upper()
-                    llm_reason = decision.get("reason", "LLM 응답 없음")
+                    llm_reason   = decision.get("reason", "LLM 응답 없음")
 
                     candidate["llm_decision"] = llm_decision
-                    candidate["llm_reason"] = llm_reason
+                    candidate["llm_reason"]   = llm_reason
 
                     if llm_decision == "BUY":
                         reviewed.append(candidate)
                     else:
                         held.append(candidate)
-                        print(f"  LLM HOLD: {candidate['stock_name']}({ticker}) - {llm_reason}")
+                        logger.info(f"LLM HOLD: {candidate['stock_name']}({ticker}) - {llm_reason}")
 
-                print(f"  LLM 검토 완료{used_model_note}: {len(reviewed)} BUY / {len(held)} HOLD")
-                print(f"  시장 분석: {market_analysis}")
+                logger.info(f"LLM 검토 완료{used_model_note}: {len(reviewed)} BUY / {len(held)} HOLD")
+                logger.info(f"시장 분석: {market_analysis}")
 
-                # LLM 판단 로그 저장
                 _save_llm_decision_logs(candidates, decision_map, market_analysis, vix_value)
 
                 return {
                     "reviewed_candidates": reviewed,
-                    "held_candidates": held,
-                    "llm_reasoning": market_analysis + used_model_note,
-                    "raw_response": decisions
+                    "held_candidates":     held,
+                    "llm_reasoning":       market_analysis + used_model_note,
+                    "raw_response":        decisions,
                 }
 
             except json.JSONDecodeError as e:
-                print(f"  LLM 응답 JSON 파싱 실패 (시도 {attempt + 1}): {e}")
-                print(f"  원본 응답: {response_text[:500]}")
+                logger.warning(f"LLM 응답 JSON 파싱 실패 (시도 {attempt + 1}): {e}")
                 last_error = e
-                # JSON 파싱 실패는 재시도해도 같은 결과일 수 있으므로 바로 다음 모델로
-                break
+                break  # JSON 파싱 실패는 재시도해도 같은 결과 → 다음 모델로
 
-            except (anthropic.APIStatusError, anthropic.APIConnectionError) as e:
+            except openai.RateLimitError as e:
+                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                logger.warning(f"LLM 속도 제한 (시도 {attempt + 1}/{MAX_RETRIES}, {model}): {e} → {delay}초 대기")
                 last_error = e
-                error_code = getattr(e, 'status_code', 0)
-                delay = RETRY_DELAYS[attempt] if attempt < len(RETRY_DELAYS) else RETRY_DELAYS[-1]
+                time.sleep(delay)
 
-                if error_code == 529 or error_code == 429 or error_code == 503:
-                    print(f"  LLM 서버 과부하/속도제한 (시도 {attempt + 1}/{MAX_RETRIES}, 모델: {model}): {e}")
-                    print(f"  {delay}초 후 재시도...")
+            except openai.APIStatusError as e:
+                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                if e.status_code in (429, 503, 529):
+                    logger.warning(f"LLM 서버 과부하 (시도 {attempt + 1}/{MAX_RETRIES}, {model}): {e} → {delay}초 대기")
+                    last_error = e
                     time.sleep(delay)
-                    continue
                 else:
-                    # 다른 API 에러는 재시도해도 안 되므로 중단
-                    print(f"  LLM API 에러 (시도 {attempt + 1}, 모델: {model}): {e}")
-                    break
+                    logger.error(f"LLM API 에러 (시도 {attempt + 1}, {model}): {e}")
+                    last_error = e
+                    break  # 다른 API 에러는 재시도 불필요 → 다음 모델로
 
             except Exception as e:
+                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                logger.warning(f"LLM 호출 실패 (시도 {attempt + 1}/{MAX_RETRIES}, {model}): {e} → {delay}초 대기")
                 last_error = e
-                delay = RETRY_DELAYS[attempt] if attempt < len(RETRY_DELAYS) else RETRY_DELAYS[-1]
-                print(f"  LLM 호출 실패 (시도 {attempt + 1}/{MAX_RETRIES}, 모델: {model}): {e}")
-                print(f"  {delay}초 후 재시도...")
                 time.sleep(delay)
-                continue
 
-        # 현재 모델 전체 실패 → 다음 모델로 폴백
         if model != MODELS[-1]:
-            print(f"  {model} 전체 실패. 폴백 모델 {MODELS[MODELS.index(model) + 1]}로 전환합니다.")
+            next_model = MODELS[MODELS.index(model) + 1]
+            logger.warning(f"{model} 전체 실패. 폴백 모델 {next_model}로 전환합니다.")
 
-    # 모든 모델, 모든 재시도 실패
-    fail_reason = f"LLM 호출 전체 실패 (Opus {MAX_RETRIES}회 + Sonnet {MAX_RETRIES}회): {str(last_error)}"
-    print(f"  {fail_reason}")
+    fail_reason = f"LLM 호출 전체 실패 (gpt-4o {MAX_RETRIES}회 + gpt-4o-mini {MAX_RETRIES}회): {last_error}"
+    logger.error(fail_reason)
 
-    # 실패 시에도 로그 저장 (사유 기록)
     fail_decision_map = {c["ticker"]: {"decision": "FAIL", "reason": fail_reason} for c in candidates}
     _save_llm_decision_logs(candidates, fail_decision_map, fail_reason, vix_value)
 
     return {
         "reviewed_candidates": [],
-        "held_candidates": candidates,
-        "llm_reasoning": fail_reason,
-        "raw_response": []
+        "held_candidates":     candidates,
+        "llm_reasoning":       fail_reason,
+        "raw_response":        [],
     }

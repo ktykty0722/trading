@@ -12,6 +12,7 @@ from app.core.config import settings
 import logging
 from app.services.economic_service import update_economic_data_in_background
 from app.services.llm_review_service import review_buy_candidates
+from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report
 
 # 로깅 설정
 logging.basicConfig(
@@ -427,6 +428,8 @@ class StockScheduler:
                             "profit_loss_pct": round(profit_loss_pct, 2) if profit_loss_pct else None,
                         }).eq("ticker", ticker).eq("status", "holding").execute()
                         logger.info(f"  {stock_name}({ticker}) trade_records 매도 주문 접수 (사유: {sell_reason}, 예상손익: {profit_loss_pct:.2f}%)" if profit_loss_pct else f"  {stock_name}({ticker}) trade_records 매도 주문 접수 (사유: {sell_reason})")
+                        notify_sell_order(ticker, stock_name, purchase_price, current_price,
+                                          quantity, sell_reason, profit_loss, profit_loss_pct)
                     except Exception as tr_e:
                         logger.error(f"  {stock_name}({ticker}) trade_records 업데이트 실패: {tr_e}")
                 else:
@@ -514,8 +517,19 @@ class StockScheduler:
 
         logger.info(f"매수 후보 {len(buy_candidates)}개 → LLM 최종 검토 시작")
 
-        # LLM 최종 검토 (거부권만 행사)
+        # VIX 임계값 초과 시 알림 (매수는 recommendation_service에서 이미 차단됨)
         vix_value = buy_candidates[0].get("vix_value") if buy_candidates else None
+        if vix_value:
+            try:
+                threshold = float(
+                    (supabase.table("system_config").select("value").eq("key", "vix_halt_threshold").execute().data or [{}])[0].get("value", 35)
+                )
+                if vix_value > threshold:
+                    notify_vix_alert(vix_value, threshold)
+            except Exception:
+                pass
+
+        # LLM 최종 검토 (거부권만 행사)
         review_result = review_buy_candidates(buy_candidates, vix_value)
         buy_candidates = review_result["reviewed_candidates"]
 
@@ -651,6 +665,9 @@ class StockScheduler:
                             "composite_score": candidate.get("composite_score"),
                         }).execute()
                         logger.info(f"  {stock_name}({pure_ticker}) trade_records 저장 완료 (status: buy_ordered)")
+                        notify_buy_order(pure_ticker, stock_name, current_price, quantity,
+                                         exchange_code, candidate.get("composite_score", 0),
+                                         take_profit_price, stop_loss_price)
                     except Exception as tr_e:
                         logger.error(f"  {stock_name}({pure_ticker}) trade_records 저장 실패: {tr_e}")
                 else:
@@ -758,4 +775,41 @@ def stop_economic_data_scheduler():
 
 def run_economic_data_update_now(force: bool = False):
     """즉시 경제 데이터 업데이트 실행 함수 (force=True: 장 중에도 강제 수집)"""
-    return _run_economic_data_update(force=force) 
+    return _run_economic_data_update(force=force)
+
+
+# ============================================================
+# 일일 리포트 스케줄러 (17:00 ET = 장 마감 1시간 후)
+# ============================================================
+def _send_daily_report():
+    try:
+        today = datetime.now(pytz.timezone("America/New_York")).strftime("%Y-%m-%d")
+        trades = supabase.table("trade_records").select(
+            "status, profit_loss, profit_loss_pct"
+        ).gte("created_at", today).execute().data or []
+
+        holdings   = sum(1 for t in trades if t["status"] in ("holding", "buy_ordered"))
+        sold_today = [t for t in trades if t["status"] == "sold" and t.get("profit_loss_pct") is not None]
+        daily_pnl  = sum(t["profit_loss_pct"] for t in sold_today) / len(sold_today) if sold_today else None
+
+        all_sold = supabase.table("trade_records").select("profit_loss").eq(
+            "status", "sold"
+        ).execute().data or []
+        total_pnl = sum(t["profit_loss"] for t in all_sold if t.get("profit_loss")) or None
+
+        notify_daily_report(today, holdings, daily_pnl, total_pnl)
+    except Exception as e:
+        logger.error(f"일일 리포트 발송 실패: {e}")
+
+
+_daily_report_running = False
+
+
+def start_daily_report_scheduler():
+    global _daily_report_running
+    if _daily_report_running:
+        return False
+    schedule.every().day.at("17:00").do(_send_daily_report)
+    _daily_report_running = True
+    logger.info("일일 리포트 스케줄러 시작됨 (매일 17:00 ET)")
+    return True
