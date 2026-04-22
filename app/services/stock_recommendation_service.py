@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import requests
 import time
@@ -8,59 +9,37 @@ from app.core.config import settings
 from app.services.balance_service import get_overseas_balance, get_all_overseas_balances
 from app.services.volume_service import get_overseas_daily_price
 
-# 한국어 주식명과 티커 심볼 매핑
-STOCK_TO_TICKER = {
-    "애플": "AAPL",
-    "마이크로소프트": "MSFT",
-    "아마존": "AMZN",
-    "구글 A": "GOOGL",
-    "구글 C": "GOOG",
-    "메타": "META",
-    "테슬라": "TSLA",
-    "엔비디아": "NVDA",
-    "코스트코": "COST",
-    "넷플릭스": "NFLX",
-    "페이팔": "PYPL",
-    "인텔": "INTC",
-    "시스코": "CSCO",
-    "컴캐스트": "CMCSA",
-    "펩시코": "PEP",
-    "암젠": "AMGN",
-    "허니웰 인터내셔널": "HON",
-    "스타벅스": "SBUX",
-    "몬델리즈": "MDLZ",
-    "마이크론": "MU",
-    "브로드컴": "AVGO",
-    "어도비": "ADBE",
-    "텍사스 인스트루먼트": "TXN",
-    "AMD": "AMD",
-    "어플라이드 머티리얼즈": "AMAT",
-    "S&P 500 ETF": "SPY",
-    "QQQ ETF": "QQQ"
-}
+logger = logging.getLogger(__name__)
 
-# 티커별 거래소 코드 매핑 (NASD=나스닥, NYSE=뉴욕증권거래소, AMEX=아메리칸)
-TICKER_TO_EXCHANGE = {
-    "AAPL": "NASD", "MSFT": "NASD", "AMZN": "NASD", "GOOGL": "NASD", "GOOG": "NASD",
-    "META": "NASD", "TSLA": "NASD", "NVDA": "NASD", "COST": "NASD", "NFLX": "NASD",
-    "PYPL": "NASD", "INTC": "NASD", "CSCO": "NASD", "CMCSA": "NASD", "PEP": "NASD",
-    "AMGN": "NASD", "HON": "NASD", "SBUX": "NASD", "MDLZ": "NASD", "MU": "NASD",
-    "AVGO": "NASD", "ADBE": "NASD", "TXN": "NASD", "AMD": "NASD", "AMAT": "NASD",
-    "SPY": "AMEX", "QQQ": "NASD",
-}
-
-# 거래소 코드 → KIS API 코드 변환
+# 거래소 코드 → KIS API 코드 변환 (변경 없음)
 EXCHANGE_TO_API = {
     "NASD": "NAS",
     "NYSE": "NYS",
     "AMEX": "AMS",
 }
 
+
+def _load_stock_universe() -> list[dict]:
+    """stock_universe 테이블에서 활성 종목 목록을 로드합니다."""
+    try:
+        resp = supabase.table("stock_universe").select("ticker, name_ko, exchange, is_etf").eq("is_active", True).execute()
+        return resp.data or []
+    except Exception as e:
+        logger.error(f"stock_universe 로드 오류: {e}")
+        return []
+
+
 class StockRecommendationService:
+
     def __init__(self):
-        # ETF 제외한 컬럼명 리스트
-        self.stock_columns = list(STOCK_TO_TICKER.keys())[:-2]
-        self.lookback_days = 180  # 6개월 데이터
+        universe = _load_stock_universe()
+        # ETF 제외한 종목 ticker 리스트
+        self.tickers = [u["ticker"] for u in universe if not u.get("is_etf", False)]
+        # ticker → name_ko 매핑
+        self.ticker_to_name = {u["ticker"]: u["name_ko"] for u in universe}
+        # ticker → exchange 매핑
+        self.ticker_to_exchange = {u["ticker"]: u["exchange"] for u in universe}
+        self.lookback_days = 180
 
     def calculate_sma(self, series, period):
         """단순 이동평균(SMA) 계산"""
@@ -225,214 +204,180 @@ class StockRecommendationService:
             return None
 
     def generate_technical_recommendations(self):
-        """기술적 지표를 기반으로 추천 데이터를 생성하고 Supabase에 저장"""
-        # 최근 6개월 데이터만 가져오기
+        """기술적 지표를 계산하고 stock_signals 테이블에 저장"""
         end_date = datetime.now()
         start_date = end_date - timedelta(days=self.lookback_days)
         start_date_str = start_date.strftime("%Y-%m-%d")
 
-        # Supabase 쿼리에서 컬럼명에 큰따옴표 추가
-        quoted_columns = [f'"{col}"' for col in self.stock_columns]
-        quoted_columns.append('"날짜"')  # 날짜 컬럼 추가
-
-        response = supabase.table("economic_and_stock_data") \
-            .select(*quoted_columns) \
-            .gte("날짜", start_date_str) \
-            .order("날짜") \
+        # stock_daily_prices (Long format) → Wide format pivot
+        resp = supabase.table("stock_daily_prices") \
+            .select("date, ticker, close") \
+            .in_("ticker", self.tickers) \
+            .gte("date", start_date_str) \
+            .order("date") \
             .execute()
 
-        if not response.data:
-            return {"message": "데이터가 없습니다", "data": []}
+        if not resp.data:
+            return {"message": "주가 데이터가 없습니다", "data": []}
 
-        # 데이터프레임 생성 (컬럼명은 큰따옴표 제외)
-        df = pd.DataFrame(response.data)
-        df["날짜"] = pd.to_datetime(df["날짜"])
-        df.set_index("날짜", inplace=True)
-        df = df.astype(float)
-        df.ffill(inplace=True)   # 주말/공휴일 갭 채우기 (RSI 등 rolling 계산에 필수)
-        df.bfill(inplace=True)   # 시작부분 NaN 채우기
+        raw_df = pd.DataFrame(resp.data)
+        raw_df["date"] = pd.to_datetime(raw_df["date"])
+        raw_df["close"] = pd.to_numeric(raw_df["close"], errors="coerce")
 
-        recommendations = []
-        for stock in self.stock_columns:
-            prices = df[stock]
+        # Long → Wide (날짜 × 티커)
+        df = raw_df.pivot(index="date", columns="ticker", values="close")
+        df.sort_index(inplace=True)
+        df.ffill(inplace=True)
+        df.bfill(inplace=True)
 
-            # 지표 계산
+        signals = []
+        for ticker in self.tickers:
+            if ticker not in df.columns:
+                logger.warning(f"{ticker}: stock_daily_prices에 데이터 없음")
+                continue
+
+            prices = df[ticker]
+
             sma20 = self.calculate_sma(prices, 20)
             sma50 = self.calculate_sma(prices, 50)
             golden_cross = sma20 > sma50
             rsi = self.calculate_rsi(prices)
-            macd, signal = self.calculate_macd(prices)
-            macd_buy_signal = macd > signal
-            rsi_val = rsi.iloc[-1] if not rsi.empty else 50
-            rsi_buy = rsi_val <= 65  # ≤65 정상 매수, >65 과열, >80 하드블록
-            recommended = golden_cross & rsi_buy & macd_buy_signal
+            macd, signal_line = self.calculate_macd(prices)
+            macd_buy_signal = macd > signal_line
 
-            # 거래량 비율 + ADX 조회 (KIS 일봉 API 1회 호출로 둘 다 계산)
-            ticker = STOCK_TO_TICKER.get(stock)
+            # KIS API에서 거래량/ADX 조회
             volume_ratio = None
             adx = None
             daily_change_pct = None
-            if ticker:
-                try:
-                    api_excd = EXCHANGE_TO_API.get(TICKER_TO_EXCHANGE.get(ticker, "NASD"), "NAS")
-                    vol_result = get_overseas_daily_price(api_excd, ticker, gubn="0")
-                    if vol_result and vol_result.get("rt_cd") == "0":
-                        raw_daily_data = vol_result.get("output2", [])
-                        # 실제 거래일만 필터링: xymd(날짜)로 주말 제외 + tvol > 0 확인
-                        daily_data = []
-                        for d in raw_daily_data:
-                            xymd = d.get("xymd", "")
-                            tvol = int(d.get("tvol", "0") or "0")
-                            if xymd and len(xymd) == 8 and tvol > 0:
-                                try:
-                                    dt = datetime.strptime(xymd, "%Y%m%d")
-                                    # 월~금(0~4)만 거래일로 인정
-                                    if dt.weekday() < 5:
-                                        daily_data.append(d)
-                                except ValueError:
-                                    pass
-                        print(f"  {ticker} 거래일 필터: {len(raw_daily_data)}일 → {len(daily_data)}일 (주말/비거래일 제외)")
-                        # 거래량 비율 (최근 완료된 거래일 기준 5일 평균 대비)
-                        # 미장 개장 전/시간외 거래는 정규 거래량 대비 극히 적으므로,
-                        # 첫 번째 거래일 거래량이 두 번째 대비 1% 미만이면 미완료 거래일로 간주하고 건너뜀
-                        if len(daily_data) >= 7:
-                            first_vol = int(daily_data[0].get("tvol", "0") or "0")
-                            second_vol = int(daily_data[1].get("tvol", "0") or "0")
-                            if second_vol > 0 and first_vol < second_vol * 0.01:
-                                # 오늘 데이터는 미완료(프리마켓/시간외) → 건너뜀
-                                print(f"  {ticker} 오늘({daily_data[0].get('xymd')}) 거래량 {first_vol:,}은 프리마켓/시간외 → 직전 거래일 기준으로 계산")
-                                daily_data = daily_data[1:]
-                        if len(daily_data) >= 6:
-                            today_vol = int(daily_data[0].get("tvol", "0") or "0")
-                            past_vols = [int(d.get("tvol", "0") or "0") for d in daily_data[1:6]]
-                            past_vols = [v for v in past_vols if v > 0]
-                            if past_vols:
-                                avg_vol = sum(past_vols) / len(past_vols)
-                                volume_ratio = round(today_vol / avg_vol, 2) if avg_vol > 0 else None
-                                print(f"  {ticker} volume_ratio={volume_ratio} (day={daily_data[0].get('xymd')}, vol={today_vol:,}, avg={avg_vol:,.0f})")
-                        # ADX (거래일 데이터로 계산)
-                        adx = self.calculate_adx(daily_data if daily_data else raw_daily_data)
-                        # 당일 변동률 계산 (패닉셀 판단용)
-                        if len(daily_data) >= 2:
-                            today_close = float(daily_data[0].get("clos", "0") or "0")
-                            prev_close = float(daily_data[1].get("clos", "0") or "0")
-                            if prev_close > 0 and today_close > 0:
-                                daily_change_pct = round(((today_close - prev_close) / prev_close) * 100, 2)
-                    time.sleep(1.1)  # KIS API 초당 1건 제한 방지
-                except Exception as e:
-                    print(f"  {ticker} 거래량/ADX 조회 실패: {e}")
+            try:
+                exchange = self.ticker_to_exchange.get(ticker, "NASD")
+                api_excd = EXCHANGE_TO_API.get(exchange, "NAS")
+                vol_result = get_overseas_daily_price(api_excd, ticker, gubn="0")
+                if vol_result and vol_result.get("rt_cd") == "0":
+                    raw_daily = vol_result.get("output2", [])
+                    # 실제 거래일 필터링 (주말·비정상 제외)
+                    daily_data = []
+                    for d in raw_daily:
+                        xymd = d.get("xymd", "")
+                        tvol = int(d.get("tvol", "0") or "0")
+                        if xymd and len(xymd) == 8 and tvol > 0:
+                            try:
+                                if datetime.strptime(xymd, "%Y%m%d").weekday() < 5:
+                                    daily_data.append(d)
+                            except ValueError:
+                                pass
+                    # 미완료 거래일(프리마켓) 제거
+                    if len(daily_data) >= 2:
+                        first_vol  = int(daily_data[0].get("tvol", "0") or "0")
+                        second_vol = int(daily_data[1].get("tvol", "0") or "0")
+                        if second_vol > 0 and first_vol < second_vol * 0.01:
+                            daily_data = daily_data[1:]
+                    # 거래량 비율 (5일 평균 대비)
+                    if len(daily_data) >= 6:
+                        today_vol = int(daily_data[0].get("tvol", "0") or "0")
+                        past_vols = [int(d.get("tvol", "0") or "0") for d in daily_data[1:6] if int(d.get("tvol", "0") or "0") > 0]
+                        if past_vols:
+                            avg_vol = sum(past_vols) / len(past_vols)
+                            volume_ratio = round(today_vol / avg_vol, 2) if avg_vol > 0 else None
+                    adx = self.calculate_adx(daily_data or raw_daily)
+                    if len(daily_data) >= 2:
+                        c0 = float(daily_data[0].get("clos", "0") or "0")
+                        c1 = float(daily_data[1].get("clos", "0") or "0")
+                        if c0 > 0 and c1 > 0:
+                            daily_change_pct = round((c0 - c1) / c1 * 100, 2)
+                time.sleep(1.1)
+            except Exception as e:
+                logger.warning(f"{ticker} 거래량/ADX 조회 실패: {e}")
 
-            # 가장 최근 날짜의 결과만 저장
-            latest_date = df.index[-1]
-            if all(pd.notna([sma20[latest_date], sma50[latest_date], rsi[latest_date], macd[latest_date], signal[latest_date]])):
-                recommendations.append({
-                    "날짜": latest_date.strftime("%Y-%m-%d"),
-                    "종목": stock,
-                    "SMA20": float(sma20[latest_date]),
-                    "SMA50": float(sma50[latest_date]),
-                    "골든_크로스": bool(golden_cross[latest_date]),
-                    "RSI": float(rsi[latest_date]),
-                    "MACD": float(macd[latest_date]),
-                    "Signal": float(signal[latest_date]),
-                    "MACD_매수_신호": bool(macd_buy_signal[latest_date]),
-                    "추천_여부": bool(recommended[latest_date]),
-                    "volume_ratio": volume_ratio,
-                    "adx": adx,
+            latest = df.index[-1]
+            if all(pd.notna([sma20[latest], sma50[latest], rsi[latest], macd[latest], signal_line[latest]])):
+                signals.append({
+                    "date":             latest.strftime("%Y-%m-%d"),
+                    "ticker":           ticker,
+                    "sma20":            float(sma20[latest]),
+                    "sma50":            float(sma50[latest]),
+                    "golden_cross":     bool(golden_cross[latest]),
+                    "rsi":              float(rsi[latest]),
+                    "macd":             float(macd[latest]),
+                    "signal_line":      float(signal_line[latest]),
+                    "macd_buy_signal":  bool(macd_buy_signal[latest]),
+                    "volume_ratio":     volume_ratio,
+                    "adx":              adx,
                     "daily_change_pct": daily_change_pct,
                 })
 
-        # 기존 데이터 삭제 후 새 데이터 저장
+        # stock_signals 테이블 upsert (date+ticker unique)
         try:
-            # 전체 데이터 삭제 (항상 TRUE인 조건 사용)
-            supabase.table("stock_recommendations").delete().eq("날짜", "1900-01-01").gte("날짜", "1900-01-01").execute()
-            
-            # 또는 이런 방식도 가능합니다 (모든 레코드와 매치되는 조건)
-            supabase.table("stock_recommendations").delete().gte("날짜", "1900-01-01").execute()
-            
-            # 새 데이터 삽입
-            supabase.table("stock_recommendations").insert(recommendations).execute()
-        
+            supabase.table("stock_signals").upsert(signals, on_conflict="date,ticker").execute()
         except Exception as e:
-            print(f"오류 발생: {str(e)}")
-            import traceback
-            print(traceback.format_exc())  # 상세 스택 트레이스 출력
-            raise Exception(f"추천 주식 분석 중 오류: {str(e)}")
+            logger.exception(f"stock_signals 저장 오류: {e}")
+            raise
 
-        return {"message": f"{len(recommendations)}개의 추천 데이터가 생성되었습니다", "data": recommendations}
+        return {"message": f"{len(signals)}개의 기술적 지표 데이터가 생성되었습니다", "data": signals}
 
     def get_stock_recommendations(self):
         """
-        Accuracy가 80% 이상이고 상승 확률이 3% 이상인 추천 주식 목록을 반환합니다.
-        상승 확률 기준으로 내림차순 정렬됩니다.
+        stock_predictions 테이블에서 상승확률 ≥ 3% 종목을 반환합니다.
         """
-        response = supabase.table("stock_analysis_results").select("*").order("created_at", desc=True).execute()
-        if not response.data:
+        # 가장 최근 예측일 기준 조회
+        resp = supabase.table("stock_predictions").select("*").gte("rise_probability", 3).order("rise_probability", desc=True).execute()
+        if not resp.data:
             return {"message": "분석 결과를 찾을 수 없습니다", "recommendations": []}
 
-        df = pd.DataFrame(response.data)
-        numeric_columns = ['Accuracy (%)', 'Rise Probability (%)']
-        for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df = pd.DataFrame(resp.data)
+        # 같은 ticker의 가장 최신 예측만 유지
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date", ascending=False).drop_duplicates(subset="ticker")
 
-        filtered_df = df[(df['Rise Probability (%)'] >= 2)]
-        filtered_df = filtered_df.sort_values(by='Rise Probability (%)', ascending=False)
-        result_columns = [
-            'Stock', 'Accuracy (%)', 'Rise Probability (%)', 'Last Actual Price',
-            'Predicted Future Price', 'Recommendation', 'Analysis'
-        ]
-        result_df = filtered_df[result_columns]
+        recommendations = []
+        for _, row in df.iterrows():
+            recommendations.append({
+                "Stock":                row["ticker"],
+                "stock_name":          self.ticker_to_name.get(row["ticker"], row["ticker"]),
+                "Accuracy (%)":        row.get("accuracy"),
+                "Rise Probability (%)": row.get("rise_probability"),
+                "Last Actual Price":   row.get("actual_price"),
+                "Predicted Future Price": row.get("predicted_price"),
+            })
 
-        recommendations = result_df.to_dict(orient='records')
         return {
             "message": f"{len(recommendations)}개의 추천 주식을 찾았습니다",
-            "recommendations": recommendations
+            "recommendations": recommendations,
         }
 
     def get_recommendations_with_sentiment(self):
         """
-        get_stock_recommendations에서 가져온 추천 주식 중 
-        ticker_sentiment_analysis 테이블에서 average_sentiment_score >= 0.15인 주식만 필터링하고,
-        두 데이터 소스의 정보를 결합하여 반환합니다.
+        ML 추천 주식 중 감성 점수 ≥ 0.15인 종목만 필터링하여 반환합니다.
         """
         stock_recs = self.get_stock_recommendations()
         recommendations = stock_recs.get("recommendations", [])
         if not recommendations:
             return {"message": "추천 주식이 없습니다", "results": []}
 
-        sentiment_response = supabase.table("ticker_sentiment_analysis").select("*").gte("average_sentiment_score", 0.15).execute()
-        if not sentiment_response.data:
-            return {"message": "감정 분석 데이터가 없습니다", "results": []}
+        rec_tickers = {r["Stock"] for r in recommendations}
+        sentiment_resp = supabase.table("ticker_sentiment").select("*").gte("sentiment_score", 0.15).execute()
+        if not sentiment_resp.data:
+            return {"message": "감성 분석 데이터가 없습니다", "results": []}
 
-        ticker_to_recommendation = {
-            STOCK_TO_TICKER.get(rec["Stock"]): rec 
-            for rec in recommendations 
-            if rec["Stock"] in STOCK_TO_TICKER
-        }
-        sentiment_data = {item["ticker"]: item for item in sentiment_response.data}
-
+        rec_by_ticker = {r["Stock"]: r for r in recommendations}
         results = []
-        for ticker, sentiment in sentiment_data.items():
-            if ticker in ticker_to_recommendation:
-                recommendation = ticker_to_recommendation[ticker]
-                combined_data = {
-                    "ticker": ticker,
-                    "stock_name": recommendation["Stock"],
-                    "accuracy": recommendation["Accuracy (%)"],
-                    "rise_probability": recommendation["Rise Probability (%)"],
-                    "last_actual_price": recommendation["Last Actual Price"],
-                    "predicted_future_price": recommendation["Predicted Future Price"],
-                    "recommendation": recommendation["Recommendation"],
-                    "analysis": recommendation["Analysis"],
-                    "average_sentiment_score": sentiment["average_sentiment_score"],
-                    "article_count": sentiment["article_count"],
-                    "calculation_date": sentiment["calculation_date"]
-                }
-                results.append(combined_data)
+        for s in sentiment_resp.data:
+            ticker = s["ticker"]
+            if ticker in rec_tickers:
+                rec = rec_by_ticker[ticker]
+                results.append({
+                    "ticker":                ticker,
+                    "stock_name":           self.ticker_to_name.get(ticker, ticker),
+                    "accuracy":             rec.get("Accuracy (%)"),
+                    "rise_probability":     rec.get("Rise Probability (%)"),
+                    "last_actual_price":    rec.get("Last Actual Price"),
+                    "predicted_future_price": rec.get("Predicted Future Price"),
+                    "sentiment_score":      s["sentiment_score"],
+                    "article_count":        s["article_count"],
+                    "updated_at":           s["updated_at"],
+                })
 
-        return {
-            "message": f"{len(results)}개의 추천 주식을 분석했습니다",
-            "results": results
-        }
+        return {"message": f"{len(results)}개의 추천 주식을 분석했습니다", "results": results}
 
     def fetch_and_store_sentiment_for_recommendations(self):
         """
@@ -467,103 +412,63 @@ class StockRecommendationService:
 
         print(f"분석할 티커 목록 ({len(all_tickers)}개): {all_tickers}")
 
-        api_key = settings.ALPHA_VANTAGE_API_KEY
+        alpha_key = settings.ALPHA_VANTAGE_API_KEY
         relevance_threshold = 0.2
         sleep_interval = 5
-        yesterday = (datetime.now() - timedelta(days=3)).strftime("%Y%m%dT0000")
-
-        base_url = "https://www.alphavantage.co/query"
-        params = {
-            "function": "NEWS_SENTIMENT",
-            "time_from": yesterday,
-            "limit": 100,
-            "apikey": api_key
-        }
-
-        ticker_to_stock = {ticker: stock for stock, ticker in STOCK_TO_TICKER.items()}
-        recommendations_by_ticker = {
-            STOCK_TO_TICKER[rec["Stock"]]: rec for rec in recommendations if rec["Stock"] in STOCK_TO_TICKER
-        }
-        
-        # 보유 주식 정보를 ticker로 매핑
-        holdings_by_ticker = {item.get("ovrs_pdno"): item for item in holdings if item.get("ovrs_pdno")}
-
-        # 기존 감정 분석 데이터 삭제
-        print("기존 감정 분석 데이터 삭제 중...")
-        supabase.table("ticker_sentiment_analysis").delete().gte("ticker", "").execute()
-        print("기존 감정 분석 데이터 삭제 완료")
+        # 어제부터 3일 전까지 기사 수집 (AlphaVantage 무료 티어 기준)
+        since = (datetime.now() - timedelta(days=1)).strftime("%Y%m%dT0000")
 
         results = []
         for ticker in all_tickers:
-            print(f"{ticker} 처리 중...")
-            params["tickers"] = ticker
-
-            response = requests.get(base_url, params=params)
-            if response.status_code != 200:
-                results.append({
-                    "ticker": ticker,
-                    "stock_name": ticker_to_stock.get(ticker, ticker),  # 티커명이 없으면 티커 자체를 표시
-                    "message": "API 호출 실패",
-                    "is_recommended": ticker in recommended_tickers,
-                    "is_holding": ticker in holding_tickers,
-                    "recommendation_info": recommendations_by_ticker.get(ticker, {}),
-                    "holding_info": holdings_by_ticker.get(ticker, {})
-                })
+            logger.info(f"{ticker} 감성 분석 중...")
+            resp = requests.get("https://www.alphavantage.co/query", params={
+                "function": "NEWS_SENTIMENT",
+                "tickers":  ticker,
+                "time_from": since,
+                "limit":    100,
+                "apikey":   alpha_key,
+            })
+            if resp.status_code != 200:
+                results.append({"ticker": ticker, "message": "API 호출 실패"})
                 time.sleep(sleep_interval)
                 continue
 
-            api_data = response.json()
-            feed = api_data.get('feed', [])
-
-            articles = [
-                float(sentiment['ticker_sentiment_score'])
+            feed = resp.json().get("feed", [])
+            scores = [
+                float(s["ticker_sentiment_score"])
                 for article in feed
-                for sentiment in article.get('ticker_sentiment', [])
-                if sentiment['ticker'] == ticker and float(sentiment['relevance_score']) >= relevance_threshold
+                for s in article.get("ticker_sentiment", [])
+                if s["ticker"] == ticker and float(s.get("relevance_score", 0)) >= relevance_threshold
             ]
 
-            if not articles:
-                results.append({
-                    "ticker": ticker,
-                    "stock_name": ticker_to_stock.get(ticker, ticker),
-                    "message": "관련 기사 없음",
-                    "is_recommended": ticker in recommended_tickers,
-                    "is_holding": ticker in holding_tickers,
-                    "recommendation_info": recommendations_by_ticker.get(ticker, {}),
-                    "holding_info": holdings_by_ticker.get(ticker, {})
-                })
+            if not scores:
+                results.append({"ticker": ticker, "message": "관련 기사 없음"})
                 time.sleep(sleep_interval)
                 continue
 
-            average_sentiment = sum(articles) / len(articles)
-            article_count = len(articles)
-            calculation_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # 해당 티커에 대한 데이터 추가
-            # 테이블 스키마에 맞게 필드 조정
-            supabase_data = {
-                "ticker": ticker,
-                "average_sentiment_score": average_sentiment,
-                "article_count": article_count,
-                "calculation_date": calculation_date
-            }
-            supabase.table("ticker_sentiment_analysis").insert(supabase_data).execute()
+            avg_score = sum(scores) / len(scores)
+
+            # ticker_sentiment 테이블 upsert (unique: ticker)
+            supabase.table("ticker_sentiment").upsert({
+                "ticker":          ticker,
+                "sentiment_score": avg_score,
+                "article_count":   len(scores),
+                "updated_at":      datetime.now().isoformat(),
+            }, on_conflict="ticker").execute()
 
             results.append({
-                "ticker": ticker,
-                "stock_name": ticker_to_stock.get(ticker, ticker),
-                "average_sentiment_score": average_sentiment,
-                "article_count": article_count,
-                "is_recommended": ticker in recommended_tickers,
-                "is_holding": ticker in holding_tickers,
-                "recommendation_info": recommendations_by_ticker.get(ticker, {}),
-                "holding_info": holdings_by_ticker.get(ticker, {})
+                "ticker":          ticker,
+                "stock_name":      self.ticker_to_name.get(ticker, ticker),
+                "sentiment_score": avg_score,
+                "article_count":   len(scores),
+                "is_recommended":  ticker in recommended_tickers,
+                "is_holding":      ticker in holding_tickers,
             })
             time.sleep(sleep_interval)
 
         return {
-            "message": f"{len(results)}개의 티커(추천 주식: {len(recommended_tickers)}개, 보유 주식: {len(holding_tickers)}개)를 분석했습니다",
-            "results": results
+            "message": f"{len(results)}개 티커 분석 완료 (추천: {len(recommended_tickers)}, 보유: {len(holding_tickers)})",
+            "results": results,
         }
 
     def get_combined_recommendations_with_technical_and_sentiment(self):
@@ -577,90 +482,75 @@ class StockRecommendationService:
         - VIX > 35이면 매수 전면 중단
         """
         try:
-            # 1. 기술적 지표 데이터 조회 (전체, 필터 없이)
-            tech_response = supabase.table("stock_recommendations").select("*").order("날짜", desc=True).execute()
+            # 1. 기술적 지표 조회 (stock_signals)
+            tech_response = supabase.table("stock_signals").select("*").order("date", desc=True).execute()
             if not tech_response.data:
                 return {"message": "기술적 지표 데이터가 없습니다", "results": []}
 
             tech_df = pd.DataFrame(tech_response.data)
-            tech_df["골든_크로스"] = tech_df["골든_크로스"].astype(bool)
-            tech_df["MACD_매수_신호"] = tech_df["MACD_매수_신호"].astype(bool)
-            tech_df["RSI"] = pd.to_numeric(tech_df["RSI"])
+            tech_df["golden_cross"]    = tech_df["golden_cross"].astype(bool)
+            tech_df["macd_buy_signal"] = tech_df["macd_buy_signal"].astype(bool)
+            tech_df["rsi"]             = pd.to_numeric(tech_df["rsi"])
+            tech_df = tech_df.sort_values("date", ascending=False).drop_duplicates(subset=["ticker"], keep="first")
 
-            # 2. ML 예측 데이터 조회 (상승확률 ≥ 2%)
+            # 2. ML 예측 데이터 조회
             stock_recs = self.get_stock_recommendations()
             recommendations = stock_recs.get("recommendations", [])
             if not recommendations:
                 return {"message": "추천 주식이 없습니다", "results": []}
 
-            # 3. 감성분석 데이터 조회 (전체 - 부정적 감성도 반영)
-            sentiment_response = supabase.table("ticker_sentiment_analysis").select("*").execute()
+            # 3. 감성분석 데이터 조회 (ticker_sentiment)
+            sentiment_response = supabase.table("ticker_sentiment").select("*").execute()
 
-            # 4. 데이터 매핑 준비 (pandas NaN → None 변환)
-            def _safe_value(v):
+            # 4. 데이터 매핑
+            def _safe(v):
                 try:
                     return None if pd.isna(v) else v
                 except (ValueError, TypeError):
                     return v
-            tech_map = {row["종목"]: {k: _safe_value(v) for k, v in row.to_dict().items()} for _, row in tech_df.iterrows()}
+
+            tech_map      = {row["ticker"]: {k: _safe(v) for k, v in row.to_dict().items()} for _, row in tech_df.iterrows()}
             sentiment_map = {item["ticker"]: item for item in sentiment_response.data} if sentiment_response.data else {}
-            
-            # 5. 결과 통합 (거래량은 DB에서 읽기)
+
+            # 5. 결과 통합
             results = []
             for rec in recommendations:
-                stock_name = rec["Stock"]
-                if stock_name not in STOCK_TO_TICKER:
-                    continue
-
-                ticker = STOCK_TO_TICKER[stock_name]
-                tech_data = tech_map.get(stock_name)
+                ticker    = rec["Stock"]
+                tech_data = tech_map.get(ticker)
                 if tech_data is None:
-                    continue  # 기술적 지표가 없으면 제외
+                    continue
 
                 sentiment = sentiment_map.get(ticker)
 
-                # 거래량 비율 + ADX는 DB에서 읽기 (generate_technical_recommendations에서 저장됨)
-                volume_ratio = tech_data.get("volume_ratio")
-                if volume_ratio is not None:
-                    volume_ratio = float(volume_ratio)
-                adx_value = tech_data.get("adx")
-                if adx_value is not None:
-                    adx_value = float(adx_value)
+                results.append({
+                    "ticker":               ticker,
+                    "stock_name":          self.ticker_to_name.get(ticker, ticker),
+                    "accuracy":            rec.get("Accuracy (%)"),
+                    "rise_probability":    rec.get("Rise Probability (%)"),
+                    "last_price":          rec.get("Last Actual Price"),
+                    "predicted_price":     rec.get("Predicted Future Price"),
+                    "sentiment_score":     sentiment["sentiment_score"] if sentiment else None,
+                    "article_count":       sentiment["article_count"] if sentiment else None,
+                    "technical_date":      tech_data.get("date"),
+                    "sma20":               tech_data.get("sma20"),
+                    "sma50":               tech_data.get("sma50"),
+                    "golden_cross":        bool(tech_data.get("golden_cross", False)),
+                    "rsi":                 tech_data.get("rsi"),
+                    "macd":                tech_data.get("macd"),
+                    "signal":              tech_data.get("signal_line"),
+                    "macd_buy_signal":     bool(tech_data.get("macd_buy_signal", False)),
+                    "volume_ratio":        tech_data.get("volume_ratio"),
+                    "adx":                 tech_data.get("adx"),
+                    "daily_change_pct":    tech_data.get("daily_change_pct"),
+                })
 
-                # 통합 데이터 생성
-                combined_data = {
-                    "ticker": ticker,
-                    "stock_name": stock_name,
-                    "accuracy": rec["Accuracy (%)"],
-                    "rise_probability": rec["Rise Probability (%)"],
-                    "last_price": rec["Last Actual Price"],
-                    "predicted_price": rec["Predicted Future Price"],
-                    "recommendation": rec["Recommendation"],
-                    "analysis": rec["Analysis"],
-                    "sentiment_score": sentiment["average_sentiment_score"] if sentiment else None,
-                    "article_count": sentiment["article_count"] if sentiment else None,
-                    "sentiment_date": sentiment["calculation_date"] if sentiment else None,
-                    "technical_date": tech_data["날짜"],
-                    "sma20": float(tech_data["SMA20"]),
-                    "sma50": float(tech_data["SMA50"]),
-                    "golden_cross": bool(tech_data["골든_크로스"]),
-                    "rsi": float(tech_data["RSI"]),
-                    "macd": float(tech_data["MACD"]),
-                    "signal": float(tech_data["Signal"]),
-                    "macd_buy_signal": bool(tech_data["MACD_매수_신호"]),
-                    "technical_recommended": bool(tech_data["추천_여부"]),
-                    "volume_ratio": volume_ratio,
-                    "adx": adx_value,
-                }
-                results.append(combined_data)
-            
-            # 5-1. VIX (시장 공포 지수) 조회 - economic_and_stock_data에서 최신값
+            # 5-1. VIX 조회 (economic_indicators)
             vix_value = None
             try:
-                vix_response = supabase.table("economic_and_stock_data").select("*").order("날짜", desc=True).limit(1).execute()
-                if vix_response.data and vix_response.data[0].get("VIX 지수") is not None:
-                    vix_value = float(vix_response.data[0]["VIX 지수"])
-                    print(f"  VIX 지수: {vix_value}")
+                vix_response = supabase.table("economic_indicators").select("vix").order("date", desc=True).limit(1).execute()
+                if vix_response.data and vix_response.data[0].get("vix") is not None:
+                    vix_value = float(vix_response.data[0]["vix"])
+                    logger.info(f"VIX 지수: {vix_value}")
             except Exception as e:
                 print(f"  VIX 조회 실패: {e}")
 
@@ -782,10 +672,8 @@ class StockRecommendationService:
             }
         
         except Exception as e:
-            print(f"오류 발생: {str(e)}")
-            import traceback
-            print(traceback.format_exc())  # 상세 스택 트레이스 출력
-            raise Exception(f"추천 주식 분석 중 오류: {str(e)}")
+            logger.exception(f"추천 주식 분석 중 오류: {e}")
+            raise
 
     def get_stocks_to_sell(self, balance_result=None):
         """
@@ -832,33 +720,29 @@ class StockRecommendationService:
                     ticker_to_korean[ticker] = name
                     korean_to_ticker[name] = ticker
             
-            # 3. 기술적 지표 데이터 가져오기
-            tech_response = supabase.table("stock_recommendations").select("*").order("날짜", desc=True).execute()
+            # 3. 기술적 지표 데이터 가져오기 (stock_signals)
+            tech_response = supabase.table("stock_signals").select("*").order("date", desc=True).execute()
             tech_data = pd.DataFrame(tech_response.data) if tech_response.data else pd.DataFrame()
-            
+
             if not tech_data.empty:
-                # 데이터 타입 변환
-                tech_data["골든_크로스"] = tech_data["골든_크로스"].astype(bool)
-                tech_data["MACD_매수_신호"] = tech_data["MACD_매수_신호"].astype(bool)
-                tech_data["RSI"] = pd.to_numeric(tech_data["RSI"])
-                
-                # 최신 데이터만 필터링 (종목별 가장 최근 날짜의 데이터)
-                tech_data = tech_data.sort_values("날짜", ascending=False)
-                tech_data = tech_data.drop_duplicates(subset=["종목"], keep="first")
-            
-            # 4. 감성 분석 데이터 가져오기
-            sentiment_response = supabase.table("ticker_sentiment_analysis").select("*").execute()
+                tech_data["golden_cross"]    = tech_data["golden_cross"].astype(bool)
+                tech_data["macd_buy_signal"] = tech_data["macd_buy_signal"].astype(bool)
+                tech_data["rsi"]             = pd.to_numeric(tech_data["rsi"])
+                tech_data = tech_data.sort_values("date", ascending=False).drop_duplicates(subset=["ticker"], keep="first")
+
+            # 4. 감성 분석 데이터 가져오기 (ticker_sentiment)
+            sentiment_response = supabase.table("ticker_sentiment").select("*").execute()
             sentiment_data = {item["ticker"]: item for item in sentiment_response.data} if sentiment_response.data else {}
-            
-            # 5. VIX 조회
+
+            # 5. VIX 조회 (economic_indicators)
             vix_value = None
             try:
-                vix_response = supabase.table("economic_and_stock_data").select("*").order("날짜", desc=True).limit(1).execute()
-                if vix_response.data and vix_response.data[0].get("VIX 지수") is not None:
-                    vix_value = float(vix_response.data[0]["VIX 지수"])
-                    print(f"  매도 판단용 VIX: {vix_value}")
+                vix_response = supabase.table("economic_indicators").select("vix").order("date", desc=True).limit(1).execute()
+                if vix_response.data and vix_response.data[0].get("vix") is not None:
+                    vix_value = float(vix_response.data[0]["vix"])
+                    logger.info(f"매도 판단용 VIX: {vix_value}")
             except Exception as e:
-                print(f"  VIX 조회 실패: {e}")
+                logger.warning(f"VIX 조회 실패: {e}")
 
             # 6. trade_records에서 ATR 기반 익절/손절 기준 조회
             trade_records_map = {}
@@ -872,83 +756,68 @@ class StockRecommendationService:
 
             # 6. 매도 대상 종목 식별
             sell_candidates = []
-            ticker_to_stock = {v: k for k, v in STOCK_TO_TICKER.items()}
 
             for item in holdings:
-                ticker = item.get("ovrs_pdno")
-                stock_name = item.get("ovrs_item_name")
+                ticker         = item.get("ovrs_pdno")
+                stock_name     = item.get("ovrs_item_name", ticker)
                 purchase_price = float(item.get("pchs_avg_pric", 0))
-                current_price = float(item.get("now_pric2", 0))
-                quantity = int(item.get("ovrs_cblc_qty", 0))
-                exchange_code = item.get("ovrs_excg_cd", "")
-                
-                # 가격 변동률 계산
+                current_price  = float(item.get("now_pric2", 0))
+                quantity       = int(item.get("ovrs_cblc_qty", 0))
+                exchange_code  = item.get("ovrs_excg_cd", "")
+
                 price_change_percent = ((current_price - purchase_price) / purchase_price) * 100 if purchase_price > 0 else 0
-                
-                # 매도 근거와 신호 수를 추적할 변수들
-                sell_reasons = []
+
+                sell_reasons           = []
                 technical_sell_signals = 0
-                
-                # 조건 1: ATR 기반 동적 익절/손절 (trade_records에서 조회)
+
+                # 조건 1: ATR 기반 동적 익절/손절
                 trade_record = trade_records_map.get(ticker)
                 if trade_record and trade_record.get("take_profit_price") and trade_record.get("stop_loss_price"):
                     tp_price = float(trade_record["take_profit_price"])
                     sl_price = float(trade_record["stop_loss_price"])
                     if current_price >= tp_price:
-                        sell_reasons.append(f"ATR 익절 조건 충족: 현재가 ${current_price:.2f} >= 익절가 ${tp_price:.2f} (구매가 대비 {price_change_percent:.2f}%)")
+                        sell_reasons.append(f"ATR 익절: 현재 ${current_price:.2f} >= 익절가 ${tp_price:.2f} ({price_change_percent:.2f}%)")
                     elif current_price <= sl_price:
-                        sell_reasons.append(f"ATR 손절 조건 충족: 현재가 ${current_price:.2f} <= 손절가 ${sl_price:.2f} (구매가 대비 {price_change_percent:.2f}%)")
+                        sell_reasons.append(f"ATR 손절: 현재 ${current_price:.2f} <= 손절가 ${sl_price:.2f} ({price_change_percent:.2f}%)")
                 else:
-                    # trade_records에 ATR 정보가 없는 경우 고정 비율 폴백
                     if price_change_percent >= 5:
-                        sell_reasons.append(f"익절 조건 충족: 구매가 대비 {price_change_percent:.2f}% 상승 (고정비율)")
+                        sell_reasons.append(f"익절(고정): +{price_change_percent:.2f}%")
                     elif price_change_percent <= -7:
-                        sell_reasons.append(f"손절 조건 충족: 구매가 대비 {price_change_percent:.2f}% 하락 (고정비율)")
-                
-                # 기술적 지표 확인 (티커 기반 매칭: KIS API는 영문명 반환, tech_data는 한글명 사용)
+                        sell_reasons.append(f"손절(고정): {price_change_percent:.2f}%")
+
+                # 기술적 지표 (stock_signals 테이블, ticker 기반 매칭)
                 tech_record = None
                 if not tech_data.empty:
-                    korean_name = ticker_to_stock.get(ticker)
-                    if korean_name:
-                        tech_filtered = tech_data[tech_data["종목"] == korean_name]
-                        if not tech_filtered.empty:
-                            tech_record = tech_filtered.iloc[0].to_dict()
+                    tech_filtered = tech_data[tech_data["ticker"] == ticker]
+                    if not tech_filtered.empty:
+                        tech_record = tech_filtered.iloc[0].to_dict()
                 
-                # 조건 2: 기술적 매도 신호 (4개)
+                # 조건 2: 기술적 매도 신호 (stock_signals 컬럼명 사용)
                 tech_sell_signals_details = []
                 if tech_record:
-                    # ① 데드 크로스
-                    if not tech_record["골든_크로스"]:
+                    if not tech_record.get("golden_cross", True):
                         technical_sell_signals += 1
                         tech_sell_signals_details.append("데드 크로스")
 
-                    # ② RSI > 70 (과매수)
-                    if tech_record["RSI"] > 70:
+                    rsi_val = tech_record.get("rsi", 50)
+                    if rsi_val and float(rsi_val) > 70:
                         technical_sell_signals += 1
-                        tech_sell_signals_details.append(f"RSI 과매수({tech_record['RSI']:.2f})")
+                        tech_sell_signals_details.append(f"RSI 과매수({float(rsi_val):.1f})")
 
-                    # ③ MACD 매도 신호
-                    if not tech_record["MACD_매수_신호"]:
+                    if not tech_record.get("macd_buy_signal", True):
                         technical_sell_signals += 1
                         tech_sell_signals_details.append("MACD 매도 신호")
 
-                    # ④ 패닉셀 감지: 거래량 2배 이상 + 당일 -3% 이상 하락
-                    volume_ratio = tech_record.get("volume_ratio")
-                    daily_change = tech_record.get("daily_change_pct")
-                    if volume_ratio is not None and daily_change is not None and float(volume_ratio) >= 2.0 and float(daily_change) <= -3:
+                    vr   = tech_record.get("volume_ratio")
+                    dchg = tech_record.get("daily_change_pct")
+                    if vr is not None and dchg is not None and float(vr) >= 2.0 and float(dchg) <= -3:
                         technical_sell_signals += 1
-                        tech_sell_signals_details.append(f"패닉셀(거래량 {float(volume_ratio):.1f}배, 당일 {float(daily_change):.1f}% 하락)")
+                        tech_sell_signals_details.append(f"패닉셀(거래량 {float(vr):.1f}배, {float(dchg):.1f}%)")
 
-                # ADX 보정: ADX > 25이면 필요 신호 수 1개 차감
-                adx_value = None
-                if tech_record and tech_record.get("adx") is not None:
-                    adx_value = float(tech_record["adx"])
+                adx_value     = float(tech_record["adx"]) if tech_record and tech_record.get("adx") is not None else None
                 adx_adjustment = 1 if adx_value is not None and adx_value > 25 else 0
 
-                # 감성 분석 데이터 확인
-                sentiment_score = None
-                if ticker in sentiment_data:
-                    sentiment_score = sentiment_data[ticker].get("average_sentiment_score")
+                sentiment_score = sentiment_data.get(ticker, {}).get("sentiment_score")
 
                 # 조건 2b: 매도 신호 3개 이상 (ADX>25이면 2개 이상)
                 required_signals_2b = 3 - adx_adjustment
@@ -998,10 +867,5 @@ class StockRecommendationService:
             }
             
         except Exception as e:
-            print(f"매도 대상 종목 식별 중 오류 발생: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            return {
-                "message": f"매도 대상 종목 식별 중 오류 발생: {str(e)}",
-                "sell_candidates": []
-            }
+            logger.exception(f"매도 대상 종목 식별 오류: {e}")
+            return {"message": f"매도 대상 종목 식별 오류: {e}", "sell_candidates": []}
