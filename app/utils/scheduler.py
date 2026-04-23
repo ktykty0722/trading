@@ -12,7 +12,11 @@ from app.core.config import settings
 import logging
 from app.services.economic_service import update_economic_data_in_background
 from app.services.llm_review_service import review_buy_candidates
-from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report
+from app.services.risk_service import (
+    check_daily_loss_limit, check_max_positions,
+    check_sector_concentration, calculate_position_size,
+)
+from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report, notify
 
 # 로깅 설정
 logging.basicConfig(
@@ -501,7 +505,20 @@ class StockScheduler:
         except Exception as e:
             logger.error(f"보유 종목 조회 중 오류 발생: {str(e)}", exc_info=True)
             return
-            
+
+        # ── 리스크 체크 1: 일일 최대 손실 한도 ──────────────────
+        safe, reason = check_daily_loss_limit()
+        if not safe:
+            logger.warning(f"일일 손실 한도 초과 — 매수 중단: {reason}")
+            notify(f"⛔ <b>일일 손실 한도 초과 — 매수 중단</b>\n{reason}")
+            return
+
+        # ── 리스크 체크 2: 최대 보유 종목 수 ─────────────────────
+        can_buy, reason = check_max_positions(holding_tickers)
+        if not can_buy:
+            logger.info(f"최대 보유 종목 수 도달 — 매수 없음: {reason}")
+            return
+
         # StockRecommendationService에서 이미 필터링된 매수 대상 종목 가져오기
         recommendations = self.recommendation_service.get_combined_recommendations_with_technical_and_sentiment()
         
@@ -553,7 +570,13 @@ class StockScheduler:
                 if pure_ticker in holding_tickers:
                     logger.info(f"{stock_name}({ticker}) - 이미 보유 중인 종목이므로 매수하지 않습니다.")
                     continue
-                
+
+                # ── 리스크 체크 3: 섹터 집중도 ───────────────────
+                can_buy_sector, sector_reason = check_sector_concentration(pure_ticker, holding_tickers)
+                if not can_buy_sector:
+                    logger.info(f"{stock_name}({ticker}) 섹터 집중도 제한: {sector_reason}")
+                    continue
+
                 # 거래소 코드 변환 (API 요청에 맞게 변환)
                 api_exchange_code = EXCHANGE_TO_API.get(exchange_code, "NAS")
 
@@ -602,15 +625,15 @@ class StockScheduler:
                         logger.info(f"{stock_name}({ticker}) 매수가능금액이 없습니다.")
                         continue
 
-                    # 종목당 투자금 = 가용 금액의 10%
-                    invest_amount = available_amount * 0.10
-                    quantity = int(invest_amount / current_price)
+                    # 포지션 사이징 (system_config.position_size_pct 기준)
+                    quantity = calculate_position_size(available_amount, current_price)
 
                     if quantity < 1:
-                        logger.info(f"{stock_name}({ticker}) 투자금(${invest_amount:.2f})으로 1주도 살 수 없습니다. (현재가 ${current_price})")
+                        logger.info(f"{stock_name}({ticker}) 매수가능금액(${available_amount:.2f})으로 1주도 살 수 없습니다. (현재가 ${current_price})")
                         continue
 
-                    logger.info(f"{stock_name}({ticker}) 매수가능금액: ${available_amount:.2f}, 투자금(10%): ${invest_amount:.2f}, 수량: {quantity}주")
+                    invest_amount = quantity * current_price
+                    logger.info(f"{stock_name}({ticker}) 매수가능금액: ${available_amount:.2f}, 투자금: ${invest_amount:.2f}, 수량: {quantity}주")
                 except Exception as ps_e:
                     logger.error(f"{stock_name}({ticker}) 매수가능금액 조회 오류: {ps_e}")
                     continue
