@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import time
 from datetime import datetime, timedelta
+import pytz
 from app.db.supabase import supabase
 import numpy as np
 from app.core.config import settings
@@ -478,8 +479,8 @@ class StockRecommendationService:
         필터링:
         - ML 예측 상승확률 ≥ 2%
         - 기술적 신호 (골든크로스, RSI 매수구간, MACD 매수) 중 2개 이상
-        - composite_score ≥ 0.3
-        - VIX > 35이면 매수 전면 중단
+        - composite_score ≥ 동적 임계치(system_config.composite_score_threshold, 기본 0.3)
+        - VIX > 동적 임계치(system_config.vix_halt_threshold, 기본 27)면 매수 전면 중단
         """
         try:
             # 1. 기술적 지표 조회 (stock_signals)
@@ -552,12 +553,24 @@ class StockRecommendationService:
                     vix_value = float(vix_response.data[0]["vix"])
                     logger.info(f"VIX 지수: {vix_value}")
             except Exception as e:
-                print(f"  VIX 조회 실패: {e}")
+                logger.warning(f"VIX 조회 실패: {e}")
 
-            # 6. 하드 블록: VIX > 35이면 매수 전면 중단 (극단적 공포장)
-            if vix_value is not None and vix_value > 35:
-                print(f"  VIX {vix_value:.1f} > 35: 공포장 매수 중단")
-                return {"message": f"VIX {vix_value:.1f} - 공포장으로 매수를 중단합니다", "results": []}
+            vix_halt_threshold = settings.VIX_HALT_THRESHOLD
+            score_threshold = 0.3
+            try:
+                vix_cfg = supabase.table("system_config").select("value").eq("key", "vix_halt_threshold").execute().data
+                score_cfg = supabase.table("system_config").select("value").eq("key", "composite_score_threshold").execute().data
+                if vix_cfg:
+                    vix_halt_threshold = float(vix_cfg[0]["value"])
+                if score_cfg:
+                    score_threshold = float(score_cfg[0]["value"])
+            except Exception as e:
+                logger.warning(f"system_config 로딩 실패(기본값 사용): {e}")
+
+            # 6. 하드 블록: VIX 임계치 초과 시 매수 전면 중단
+            if vix_value is not None and vix_value > vix_halt_threshold:
+                logger.info(f"VIX {vix_value:.1f} > {vix_halt_threshold:.1f}: 신규 매수 중단")
+                return {"message": f"VIX {vix_value:.1f} - 변동성 게이트로 매수를 중단합니다", "results": []}
 
             # 7. 매수 후보 필터링 + 종합 점수 계산
             final_results = []
@@ -565,7 +578,7 @@ class StockRecommendationService:
                 # RSI > 80 하드블록: 과매수 구간은 무조건 제외
                 rsi = item["rsi"]
                 if rsi > 80:
-                    print(f"  {item['stock_name']}({item['ticker']}) RSI {rsi:.1f} > 80 과매수 제외")
+                    logger.info(f"{item['stock_name']}({item['ticker']}) RSI {rsi:.1f} > 80 과매수 제외")
                     continue
 
                 raw_sentiment = item["sentiment_score"] if item["sentiment_score"] is not None else 0.0
@@ -659,8 +672,7 @@ class StockRecommendationService:
                 item["vix_value"] = vix_value
                 item["composite_score"] = round(composite_score, 4)
 
-                # 하한선: composite_score 0.3 미만이면 매수 안 함
-                if composite_score >= 0.3:
+                if composite_score >= score_threshold:
                     final_results.append(item)
 
             final_results.sort(key=lambda x: x["composite_score"], reverse=True)
@@ -784,6 +796,19 @@ class StockRecommendationService:
                         sell_reasons.append(f"익절(고정): +{price_change_percent:.2f}%")
                     elif price_change_percent <= -7:
                         sell_reasons.append(f"손절(고정): {price_change_percent:.2f}%")
+
+                # 조건 1-2: 시간 청산 (기본 7 영업일 경과 & 수익률 < +1%)
+                if trade_record and trade_record.get("buy_date"):
+                    try:
+                        buy_date = pd.Timestamp(trade_record["buy_date"]).tz_localize(None)
+                        now_date = pd.Timestamp(datetime.now(pytz.timezone(settings.MARKET_TIMEZONE)).date())
+                        holding_days = max(len(pd.bdate_range(buy_date.date(), now_date.date())) - 1, 0)
+                        if holding_days >= settings.TIME_STOP_BUSINESS_DAYS and price_change_percent < 1.0:
+                            sell_reasons.append(
+                                f"시간 청산: {holding_days}영업일 보유 & 수익률 {price_change_percent:.2f}% < +1.00%"
+                            )
+                    except Exception as e:
+                        logger.warning(f"{ticker} 시간 청산 계산 실패: {e}")
 
                 # 기술적 지표 (stock_signals 테이블, ticker 기반 매칭)
                 tech_record = None
