@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = Field(default="", description="Telegram Chat ID")
     TR_ID: str = Field(default="", description="KIS 거래 ID")
 
+    MARKET_TIMEZONE: str = Field(default="America/New_York", description="거래 시장 기준 시간대")
+    VIX_HALT_THRESHOLD: float = Field(default=27.0, description="VIX 신규매수 중단 임계치")
+    MAX_NEW_ENTRIES_PER_DAY: int = Field(default=3, description="하루 최대 신규 진입 종목 수")
+    ATR_TAKE_PROFIT_MULTIPLIER: float = Field(default=2.0, description="ATR 기반 익절 배수")
+    ATR_STOP_LOSS_MULTIPLIER: float = Field(default=1.0, description="ATR 기반 손절 배수")
+    TIME_STOP_BUSINESS_DAYS: int = Field(default=7, description="시간 청산 기준 영업일 수")
+
     @property
     def kis_base_url(self) -> str:
         """사용할 한국투자증권 API URL 반환"""

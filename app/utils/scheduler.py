@@ -11,10 +11,9 @@ from app.db.supabase import supabase
 from app.core.config import settings
 import logging
 from app.services.economic_service import update_economic_data_in_background
-from app.services.llm_review_service import review_buy_candidates
 from app.services.risk_service import (
     check_daily_loss_limit, check_max_positions,
-    check_sector_concentration, calculate_position_size,
+    check_sector_concentration, calculate_position_size, check_vix_halt_gate,
 )
 from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report, notify
 
@@ -532,31 +531,22 @@ class StockScheduler:
             logger.info("매수 조건을 만족하는 종목이 없습니다.")
             return
 
-        logger.info(f"매수 후보 {len(buy_candidates)}개 → LLM 최종 검토 시작")
-
-        # VIX 임계값 초과 시 알림 (매수는 recommendation_service에서 이미 차단됨)
         vix_value = buy_candidates[0].get("vix_value") if buy_candidates else None
-        if vix_value:
+        can_trade_by_vix, vix_reason = check_vix_halt_gate(vix_value)
+        if not can_trade_by_vix:
             try:
-                threshold = float(
-                    (supabase.table("system_config").select("value").eq("key", "vix_halt_threshold").execute().data or [{}])[0].get("value", 35)
-                )
-                if vix_value > threshold:
-                    notify_vix_alert(vix_value, threshold)
+                notify_vix_alert(vix_value, settings.VIX_HALT_THRESHOLD)
             except Exception:
                 pass
-
-        # LLM 최종 검토 (거부권만 행사)
-        review_result = review_buy_candidates(buy_candidates, vix_value)
-        buy_candidates = review_result["reviewed_candidates"]
-
-        if not buy_candidates:
-            logger.info("LLM 검토 결과 매수 대상이 없습니다.")
+            logger.warning(f"변동성 게이트로 매수 중단: {vix_reason}")
             return
 
-        logger.info(f"LLM 검토 통과: {len(buy_candidates)}개 종목 매수 진행")
+        max_new_entries = settings.MAX_NEW_ENTRIES_PER_DAY
+        buy_candidates = buy_candidates[:max_new_entries]
+        logger.info(f"정량 필터 통과: {len(buy_candidates)}개 종목 매수 진행 (일일 최대 {max_new_entries}개)")
         
         # 각 종목에 대해 API 호출하여 현재 체결가 조회 및 매수 주문
+        placed_orders = 0
         for candidate in buy_candidates:
             try:
                 ticker = candidate["ticker"]
@@ -669,8 +659,8 @@ class StockScheduler:
                             daily_data = vol_result.get("output2", [])
                             atr_value = self.recommendation_service.calculate_atr(daily_data)
                             if atr_value:
-                                take_profit_price = round(current_price + atr_value * 2.5, 2)
-                                stop_loss_price = round(current_price - atr_value * 1.5, 2)
+                                take_profit_price = round(current_price + atr_value * settings.ATR_TAKE_PROFIT_MULTIPLIER, 2)
+                                stop_loss_price = round(current_price - atr_value * settings.ATR_STOP_LOSS_MULTIPLIER, 2)
                                 logger.info(f"  ATR={atr_value}, 익절가=${take_profit_price}, 손절가=${stop_loss_price}")
 
                         supabase.table("trade_records").insert({
@@ -693,11 +683,16 @@ class StockScheduler:
                                          take_profit_price, stop_loss_price)
                     except Exception as tr_e:
                         logger.error(f"  {stock_name}({pure_ticker}) trade_records 저장 실패: {tr_e}")
+                    placed_orders += 1
                 else:
                     logger.error(f"{stock_name}({ticker}) 매수 주문 실패: {order_result.get('msg1', '알 수 없는 오류')}")
 
                 # 요청 간 지연 (API 요청 제한 방지)
                 await asyncio.sleep(1)
+
+                if placed_orders >= max_new_entries:
+                    logger.info(f"일일 최대 신규 진입({max_new_entries})에 도달하여 매수를 종료합니다.")
+                    break
 
             except Exception as e:
                 logger.error(f"{candidate['stock_name']}({candidate['ticker']}) 매수 처리 중 오류: {str(e)}", exc_info=True)

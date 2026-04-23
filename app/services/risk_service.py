@@ -8,6 +8,7 @@ from datetime import datetime
 
 import pytz
 from app.db.supabase import supabase
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,22 @@ def check_max_positions(holding_tickers: set) -> tuple[bool, str]:
     return True, f"보유 {current}/{max_pos}개"
 
 
+def check_vix_halt_gate(vix_value: float | None) -> tuple[bool, str]:
+    """
+    VIX 임계치 초과 시 신규 매수 차단.
+    """
+    if vix_value is None:
+        return True, "VIX 없음 — 통과"
+
+    threshold = _get_config("vix_halt_threshold", settings.VIX_HALT_THRESHOLD)
+    if float(vix_value) > threshold:
+        reason = f"VIX {float(vix_value):.2f} > 임계치 {threshold:.2f}"
+        logger.warning(f"변동성 게이트 차단: {reason}")
+        return False, reason
+
+    return True, f"VIX {float(vix_value):.2f} <= {threshold:.2f}"
+
+
 # ============================================================
 # 3. 섹터 집중도 체크
 # ============================================================
@@ -100,7 +117,7 @@ def check_sector_concentration(ticker: str, holding_tickers: set) -> tuple[bool,
     Returns:
         (can_buy, description)
     """
-    max_sector = int(_get_config("max_sector_positions", 3))
+    max_sector = int(_get_config("max_sector_positions", 2))
 
     try:
         target_rows = supabase.table("stock_universe").select("sector").eq("ticker", ticker).execute().data
