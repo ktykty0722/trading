@@ -13,6 +13,7 @@ from app.utils.scheduler import (
     start_sell_scheduler, stop_sell_scheduler,
     start_economic_data_scheduler, stop_economic_data_scheduler,
     start_daily_report_scheduler,
+    start_mlops_scheduler, stop_mlops_scheduler,
 )
 from app.telegram_bot.bot import start_bot, stop_bot
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
     stop_sell_scheduler()
     stop_economic_data_scheduler()
+    stop_mlops_scheduler()
     stop_bot()
 
 
@@ -68,6 +70,7 @@ async def _startup():
     start_sell_scheduler()
     start_economic_data_scheduler()
     start_daily_report_scheduler()
+    start_mlops_scheduler()
     start_bot()
 
 

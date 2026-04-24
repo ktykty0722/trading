@@ -1,9 +1,12 @@
 import time
 import asyncio
+import logging
 from datetime import datetime
 from app.core.config import settings
 from app.services.balance_service import get_access_token
-import requests
+from app.services.http_client import request_json
+
+logger = logging.getLogger(__name__)
 
 # 나스닥 100 종목 리스트 (2025년 기준)
 NASDAQ_100 = [
@@ -60,10 +63,9 @@ def get_overseas_daily_price(excd, symb, gubn="0", bymd="", modp="0"):
             "BYMD": bymd,
             "MODP": modp,
         }
-        response = requests.get(url, headers=headers, params=params)
-        return response.json()
+        return request_json("GET", url, headers=headers, params=params)
     except Exception as e:
-        print(f"해외주식 기간별시세 조회 오류 ({symb}): {str(e)}")
+        logger.error(f"해외주식 기간별시세 조회 오류 ({symb}): {str(e)}")
         raise
 
 
@@ -83,10 +85,9 @@ def get_stock_volume_info(excd, symb):
             "tr_id": "HHDFS00000300",
         }
         params = {"AUTH": "", "EXCD": excd, "SYMB": symb}
-        response = requests.get(url, headers=headers, params=params)
-        return response.json()
+        return request_json("GET", url, headers=headers, params=params)
     except Exception as e:
-        print(f"현재체결가 조회 오류 ({symb}): {str(e)}")
+        logger.warning(f"현재체결가 조회 오류 ({symb}): {str(e)}")
         return None
 
 
