@@ -1,6 +1,5 @@
 import logging
 import pandas as pd
-import requests
 import time
 from datetime import datetime, timedelta
 import pytz
@@ -9,6 +8,7 @@ import numpy as np
 from app.core.config import settings
 from app.services.balance_service import get_overseas_balance, get_all_overseas_balances
 from app.services.volume_service import get_overseas_daily_price
+from app.services.http_client import request_json
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class StockRecommendationService:
 
             return round(atr, 4)
         except Exception as e:
-            print(f"  ATR 계산 오류: {e}")
+            logger.warning(f"ATR 계산 오류: {e}")
             return None
 
     def calculate_adx(self, daily_data, period=14):
@@ -201,7 +201,7 @@ class StockRecommendationService:
 
             return round(adx, 2)
         except Exception as e:
-            print(f"  ADX 계산 오류: {e}")
+            logger.warning(f"ADX 계산 오류: {e}")
             return None
 
     def generate_technical_recommendations(self):
@@ -398,9 +398,9 @@ class StockRecommendationService:
 
         if balance_result.get("rt_cd") == "0" and "output1" in balance_result:
             holdings = balance_result.get("output1", [])
-            print(f"보유 주식 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
+            logger.info(f"보유 주식 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
         else:
-            print(f"보유 주식 정보를 가져오는데 실패했습니다: {balance_result.get('msg1', '알 수 없는 오류')}")
+            logger.warning(f"보유 주식 정보를 가져오는데 실패했습니다: {balance_result.get('msg1', '알 수 없는 오류')}")
         
         # 보유 주식의 티커 목록 생성
         holding_tickers = [item.get("ovrs_pdno") for item in holdings if item.get("ovrs_pdno")]
@@ -411,7 +411,7 @@ class StockRecommendationService:
         if not all_tickers:
             return {"message": "분석할 티커가 없습니다", "results": []}
 
-        print(f"분석할 티커 목록 ({len(all_tickers)}개): {all_tickers}")
+        logger.info(f"분석할 티커 목록 ({len(all_tickers)}개): {all_tickers}")
 
         alpha_key = settings.ALPHA_VANTAGE_API_KEY
         relevance_threshold = 0.2
@@ -422,19 +422,14 @@ class StockRecommendationService:
         results = []
         for ticker in all_tickers:
             logger.info(f"{ticker} 감성 분석 중...")
-            resp = requests.get("https://www.alphavantage.co/query", params={
+            response_json = request_json("GET", "https://www.alphavantage.co/query", params={
                 "function": "NEWS_SENTIMENT",
                 "tickers":  ticker,
                 "time_from": since,
                 "limit":    100,
                 "apikey":   alpha_key,
             })
-            if resp.status_code != 200:
-                results.append({"ticker": ticker, "message": "API 호출 실패"})
-                time.sleep(sleep_interval)
-                continue
-
-            feed = resp.json().get("feed", [])
+            feed = response_json.get("feed", [])
             scores = [
                 float(s["ticker_sentiment_score"])
                 for article in feed
@@ -719,7 +714,7 @@ class StockRecommendationService:
                     "sell_candidates": []
                 }
             
-            print(f"보유 종목 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
+            logger.info(f"보유 종목 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
             
             # 2. 티커와 한글명 매핑 생성
             ticker_to_korean = {}
@@ -764,7 +759,7 @@ class StockRecommendationService:
                     for tr in tr_response.data:
                         trade_records_map[tr["ticker"]] = tr
             except Exception as e:
-                print(f"trade_records 조회 실패 (고정 비율 폴백): {e}")
+                logger.warning(f"trade_records 조회 실패 (고정 비율 폴백): {e}")
 
             # 6. 매도 대상 종목 식별
             sell_candidates = []

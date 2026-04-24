@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     ATR_TAKE_PROFIT_MULTIPLIER: float = Field(default=2.0, description="ATR 기반 익절 배수")
     ATR_STOP_LOSS_MULTIPLIER: float = Field(default=1.0, description="ATR 기반 손절 배수")
     TIME_STOP_BUSINESS_DAYS: int = Field(default=7, description="시간 청산 기준 영업일 수")
+    HTTP_TIMEOUT_CONNECT: float = Field(default=3.0, description="외부 API 연결 타임아웃(초)")
+    HTTP_TIMEOUT_READ: float = Field(default=10.0, description="외부 API 읽기 타임아웃(초)")
+    HTTP_MAX_RETRIES: int = Field(default=2, description="외부 API 최대 재시도 횟수")
 
     @property
     def kis_base_url(self) -> str:

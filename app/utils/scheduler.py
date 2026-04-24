@@ -11,9 +11,17 @@ from app.db.supabase import supabase
 from app.core.config import settings
 import logging
 from app.services.economic_service import update_economic_data_in_background
+from app.services.mlops_service import (
+    should_run_monthly_retrain,
+    run_monthly_retrain_job,
+    evaluate_promotion_gate,
+    evaluate_rollback_trigger,
+)
 from app.services.risk_service import (
     check_daily_loss_limit, check_max_positions,
     check_sector_concentration, calculate_position_size, check_vix_halt_gate,
+    check_event_blackout, check_liquidity_filter,
+    check_correlation_limit, get_mdd_risk_state,
 )
 from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report, notify
 
@@ -33,10 +41,52 @@ class StockScheduler:
     
     def __init__(self):
         self.recommendation_service = StockRecommendationService()
+        self.market_tz = pytz.timezone(settings.MARKET_TIMEZONE)
         self.running = False
         self.sell_running = False  # 매도 스케줄러 실행 상태
         self.scheduler_thread = None
         self._last_buy_date = None  # 당일 매수 중복 방지
+
+    @staticmethod
+    def _parse_hhmm(value: str, default_h: int, default_m: int) -> tuple[int, int]:
+        try:
+            hh, mm = value.split(":")
+            return int(hh), int(mm)
+        except Exception:
+            return default_h, default_m
+
+    def _get_buy_window(self) -> tuple[tuple[int, int], tuple[int, int]]:
+        start_cfg = "10:30"
+        end_cfg = "10:35"
+        try:
+            start_row = supabase.table("system_config").select("value").eq("key", "buy_window_start_et").limit(1).execute().data
+            end_row = supabase.table("system_config").select("value").eq("key", "buy_window_end_et").limit(1).execute().data
+            if start_row:
+                start_cfg = start_row[0].get("value", start_cfg)
+            if end_row:
+                end_cfg = end_row[0].get("value", end_cfg)
+        except Exception:
+            pass
+        return (
+            self._parse_hhmm(start_cfg, 10, 30),
+            self._parse_hhmm(end_cfg, 10, 35),
+        )
+
+    def _is_market_open_time(self, now_market: datetime) -> bool:
+        hour = now_market.hour
+        minute = now_market.minute
+        return (
+            (hour == 9 and minute >= 30) or
+            (10 <= hour < 16) or
+            (hour == 16 and minute == 0)
+        )
+
+    def _is_buy_window(self, now_market: datetime) -> bool:
+        (sh, sm), (eh, em) = self._get_buy_window()
+        current_minutes = now_market.hour * 60 + now_market.minute
+        start_minutes = sh * 60 + sm
+        end_minutes = eh * 60 + em
+        return start_minutes <= current_minutes < end_minutes
     
     def start(self):
         """매수 스케줄러 시작"""
@@ -179,8 +229,7 @@ class StockScheduler:
                     kis_holdings[ticker] = {"qty": qty, "item": item}
 
             # 장 마감 여부 확인 (16:15 ET 이후)
-            ny_tz = pytz.timezone('America/New_York')
-            now_ny = datetime.now(ny_tz)
+            now_ny = datetime.now(self.market_tz)
             is_after_market_close = (now_ny.hour > 16) or (now_ny.hour == 16 and now_ny.minute >= 15)
 
             # 활성 레코드가 없어도 고아 감지는 실행
@@ -279,9 +328,7 @@ class StockScheduler:
         now_in_korea = datetime.now(pytz.timezone('Asia/Seoul'))
 
         # 미국 뉴욕 시간 (서머타임 자동 고려)
-        now_in_ny = datetime.now(pytz.timezone('America/New_York'))
-        ny_hour = now_in_ny.hour
-        ny_minute = now_in_ny.minute
+        now_in_ny = datetime.now(self.market_tz)
         ny_weekday = now_in_ny.weekday()  # 0=월요일, 6=일요일
 
         # 평일에만 실행
@@ -297,11 +344,7 @@ class StockScheduler:
         self._reconcile_orders(balance_result=balance_result)
 
         # 미국 주식 시장은 평일(월-금) 9:30 AM - 4:00 PM ET
-        is_market_open_time = (
-            (ny_hour == 9 and ny_minute >= 30) or
-            (10 <= ny_hour < 16) or
-            (ny_hour == 16 and ny_minute == 0)
-        )
+        is_market_open_time = self._is_market_open_time(now_in_ny)
 
         if not is_market_open_time:
             return
@@ -425,7 +468,7 @@ class StockScheduler:
                         supabase.table("trade_records").update({
                             "status": "sell_ordered",
                             "sell_price": current_price,
-                            "sell_date": datetime.now(pytz.timezone('America/New_York')).isoformat(),
+                            "sell_date": datetime.now(self.market_tz).isoformat(),
                             "sell_reason": sell_reason,
                             "profit_loss": round(profit_loss, 2) if profit_loss else None,
                             "profit_loss_pct": round(profit_loss_pct, 2) if profit_loss_pct else None,
@@ -450,15 +493,13 @@ class StockScheduler:
     async def _execute_auto_buy(self):
         """자동 매수 실행 로직 - 뉴욕 시간 10:30 ET에 실행"""
         # 뉴욕 시간 확인 (서머타임 자동 고려)
-        now_in_ny = datetime.now(pytz.timezone('America/New_York'))
-        ny_hour = now_in_ny.hour
-        ny_minute = now_in_ny.minute
+        now_in_ny = datetime.now(self.market_tz)
         ny_weekday = now_in_ny.weekday()
         ny_date = now_in_ny.date()
 
         # 평일 10:30~10:35 ET 사이에만 실행 (장 시작 후 1시간)
         is_weekday = 0 <= ny_weekday <= 4
-        is_buy_time = (ny_hour == 10 and 30 <= ny_minute < 35)
+        is_buy_time = self._is_buy_window(now_in_ny)
 
         if not (is_weekday and is_buy_time):
             return
@@ -544,6 +585,21 @@ class StockScheduler:
         max_new_entries = settings.MAX_NEW_ENTRIES_PER_DAY
         buy_candidates = buy_candidates[:max_new_entries]
         logger.info(f"정량 필터 통과: {len(buy_candidates)}개 종목 매수 진행 (일일 최대 {max_new_entries}개)")
+        can_trade_mdd, position_multiplier, mdd_reason = get_mdd_risk_state()
+        if not can_trade_mdd:
+            logger.warning(f"MDD 리스크 게이트로 신규 매수 중단: {mdd_reason}")
+            notify(f"⛔ <b>MDD 리스크 게이트 중단</b>\n{mdd_reason}")
+            return
+        logger.info(f"MDD 리스크 상태: {mdd_reason}")
+        gate_stats = {
+            "total_candidates": len(buy_candidates),
+            "skip_already_holding": 0,
+            "skip_sector": 0,
+            "skip_event": 0,
+            "skip_liquidity": 0,
+            "skip_correlation": 0,
+            "placed_orders": 0,
+        }
         
         # 각 종목에 대해 API 호출하여 현재 체결가 조회 및 매수 주문
         placed_orders = 0
@@ -559,12 +615,32 @@ class StockScheduler:
                 # 이미 보유 중이거나 이번 회차에서 주문한 종목인지 확인
                 if pure_ticker in holding_tickers:
                     logger.info(f"{stock_name}({ticker}) - 이미 보유 중인 종목이므로 매수하지 않습니다.")
+                    gate_stats["skip_already_holding"] += 1
                     continue
 
                 # ── 리스크 체크 3: 섹터 집중도 ───────────────────
                 can_buy_sector, sector_reason = check_sector_concentration(pure_ticker, holding_tickers)
                 if not can_buy_sector:
                     logger.info(f"{stock_name}({ticker}) 섹터 집중도 제한: {sector_reason}")
+                    gate_stats["skip_sector"] += 1
+                    continue
+
+                can_buy_event, event_reason = check_event_blackout(pure_ticker, now_et=now_in_ny)
+                if not can_buy_event:
+                    logger.info(f"{stock_name}({ticker}) 이벤트 블랙아웃 제외: {event_reason}")
+                    gate_stats["skip_event"] += 1
+                    continue
+
+                can_buy_liquidity, liquidity_reason = check_liquidity_filter(pure_ticker)
+                if not can_buy_liquidity:
+                    logger.info(f"{stock_name}({ticker}) 유동성 필터 제외: {liquidity_reason}")
+                    gate_stats["skip_liquidity"] += 1
+                    continue
+
+                can_buy_corr, corr_reason = check_correlation_limit(pure_ticker, holding_tickers)
+                if not can_buy_corr:
+                    logger.info(f"{stock_name}({ticker}) 상관계수 필터 제외: {corr_reason}")
+                    gate_stats["skip_correlation"] += 1
                     continue
 
                 # 거래소 코드 변환 (API 요청에 맞게 변환)
@@ -617,9 +693,13 @@ class StockScheduler:
 
                     # 포지션 사이징 (system_config.position_size_pct 기준)
                     quantity = calculate_position_size(available_amount, current_price)
+                    quantity = int(quantity * position_multiplier)
 
                     if quantity < 1:
-                        logger.info(f"{stock_name}({ticker}) 매수가능금액(${available_amount:.2f})으로 1주도 살 수 없습니다. (현재가 ${current_price})")
+                        logger.info(
+                            f"{stock_name}({ticker}) 매수수량이 1주 미만입니다. "
+                            f"(가용금액=${available_amount:.2f}, 현재가=${current_price}, MDD배수={position_multiplier:.2f})"
+                        )
                         continue
 
                     invest_amount = quantity * current_price
@@ -667,7 +747,7 @@ class StockScheduler:
                             "ticker": pure_ticker,
                             "stock_name": stock_name,
                             "buy_price": current_price,
-                            "buy_date": datetime.now(pytz.timezone('America/New_York')).strftime("%Y-%m-%d %H:%M:%S"),
+                            "buy_date": datetime.now(self.market_tz).strftime("%Y-%m-%d %H:%M:%S"),
                             "quantity": quantity,
                             "holding_quantity": 0,
                             "exchange_code": exchange_code,
@@ -684,6 +764,7 @@ class StockScheduler:
                     except Exception as tr_e:
                         logger.error(f"  {stock_name}({pure_ticker}) trade_records 저장 실패: {tr_e}")
                     placed_orders += 1
+                    gate_stats["placed_orders"] += 1
                 else:
                     logger.error(f"{stock_name}({ticker}) 매수 주문 실패: {order_result.get('msg1', '알 수 없는 오류')}")
 
@@ -698,6 +779,16 @@ class StockScheduler:
                 logger.error(f"{candidate['stock_name']}({candidate['ticker']}) 매수 처리 중 오류: {str(e)}", exc_info=True)
 
         logger.info("자동 매수 처리가 완료되었습니다.")
+        logger.info(
+            "매수 게이트 요약: candidates=%s, placed=%s, already_holding=%s, sector=%s, event=%s, liquidity=%s, correlation=%s",
+            gate_stats["total_candidates"],
+            gate_stats["placed_orders"],
+            gate_stats["skip_already_holding"],
+            gate_stats["skip_sector"],
+            gate_stats["skip_event"],
+            gate_stats["skip_liquidity"],
+            gate_stats["skip_correlation"],
+        )
 
 # 싱글톤 인스턴스 생성
 stock_scheduler = StockScheduler()
@@ -801,7 +892,7 @@ def run_economic_data_update_now(force: bool = False):
 # ============================================================
 def _send_daily_report():
     try:
-        today = datetime.now(pytz.timezone("America/New_York")).strftime("%Y-%m-%d")
+        today = datetime.now(pytz.timezone(settings.MARKET_TIMEZONE)).strftime("%Y-%m-%d")
         trades = supabase.table("trade_records").select(
             "status, profit_loss, profit_loss_pct"
         ).gte("created_at", today).execute().data or []
@@ -830,4 +921,66 @@ def start_daily_report_scheduler():
     schedule.every().day.at("17:00").do(_send_daily_report)
     _daily_report_running = True
     logger.info("일일 리포트 스케줄러 시작됨 (매일 17:00 ET)")
+    return True
+
+
+# ============================================================
+# MLOps 스케줄러 (월간 재학습 + 승격/롤백 게이트 모니터링)
+# ============================================================
+_mlops_running = False
+_last_retrain_run_date = None
+_last_rollback_alert_date = None
+
+
+def _run_mlops_cycle():
+    global _last_retrain_run_date, _last_rollback_alert_date
+    now_et = datetime.now(pytz.timezone(settings.MARKET_TIMEZONE))
+
+    # 1) 월간 재학습: 첫째 일요일 13:00 ET
+    if should_run_monthly_retrain(now_et, _last_retrain_run_date):
+        ok, msg = run_monthly_retrain_job()
+        _last_retrain_run_date = now_et.date().isoformat()
+        if ok:
+            logger.info(f"[MLOps] {msg}")
+            notify(f"🤖 <b>월간 재학습 완료</b>\n{msg}")
+            promote_ok, promote_msg = evaluate_promotion_gate()
+            if promote_ok:
+                logger.info(f"[MLOps] {promote_msg}")
+                notify(f"✅ <b>모델 승격 통과</b>\n{promote_msg}")
+            else:
+                logger.warning(f"[MLOps] {promote_msg}")
+                notify(f"⛔ <b>모델 승격 차단</b>\n{promote_msg}")
+        else:
+            logger.error(f"[MLOps] {msg}")
+            notify_error("mlops.monthly_retrain", msg)
+
+    # 2) 롤백 트리거 모니터링: 매일 17:10 ET
+    if now_et.hour == 17 and now_et.minute >= 10:
+        rollback, reason = evaluate_rollback_trigger()
+        today = now_et.date().isoformat()
+        if rollback and _last_rollback_alert_date != today:
+            _last_rollback_alert_date = today
+            logger.warning(f"[MLOps] {reason}")
+            notify(f"🚨 <b>롤백 트리거 감지</b>\n{reason}")
+
+
+def start_mlops_scheduler():
+    global _mlops_running
+    if _mlops_running:
+        return False
+    schedule.every(30).minutes.do(_run_mlops_cycle)
+    _mlops_running = True
+    logger.info("MLOps 스케줄러 시작됨 (30분 주기 모니터링)")
+    return True
+
+
+def stop_mlops_scheduler():
+    global _mlops_running
+    if not _mlops_running:
+        return False
+    mlops_jobs = [job for job in schedule.jobs if job.job_func.__name__ == '_run_mlops_cycle']
+    for job in mlops_jobs:
+        schedule.cancel_job(job)
+    _mlops_running = False
+    logger.info("MLOps 스케줄러 중지됨")
     return True
