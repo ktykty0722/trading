@@ -1,5 +1,4 @@
 import logging
-import requests
 import json
 import time
 from datetime import datetime, timedelta
@@ -8,6 +7,7 @@ from app.core.config import settings
 from app.db.supabase import supabase
 from threading import Lock
 from app.services.auth_service import parse_expiration_date
+from app.services.http_client import request_json
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +130,7 @@ def refresh_token_with_retry(record_id=None, max_retries=3):
                 "appsecret": settings.KIS_APPSECRET
             }
             
-            response = requests.post(url, json=data)
-            response_data = response.json()
+            response_data = request_json("POST", url, json=data)
             
             if 'access_token' not in response_data:
                 raise Exception(f"토큰 발급 실패: {response_data}")
@@ -197,8 +196,7 @@ def get_domestic_balance():
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, params=params)
-            result = response.json()
+            result = request_json("GET", url, headers=headers, params=params)
             
             # API 응답에 오류가 있고, 재시도 가능한 경우
             if 'rt_cd' in result and result['rt_cd'] != '0' and attempt < max_retries - 1:
@@ -253,8 +251,7 @@ def get_overseas_balance(ovrs_excg_cd="NASD"):
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, params=params)
-            result = response.json()
+            result = request_json("GET", url, headers=headers, params=params)
             
             # API 응답에 오류가 있고, 재시도 가능한 경우
             if 'rt_cd' in result and result['rt_cd'] != '0' and attempt < max_retries - 1:
@@ -362,8 +359,7 @@ def overseas_order_resv(order_data):
         # 필수 파라미터 설정
         request_body["RVSE_CNCL_DVSN_CD"] = "00"  # 정정취소구분코드 (00: 주문시 필수)
         
-        response = requests.post(url, headers=headers, json=request_body)
-        result = response.json()
+        result = request_json("POST", url, headers=headers, json=request_body)
         
         return result
     except Exception as e:
@@ -404,8 +400,7 @@ def inquire_psamount(params):
             "CTX_AREA_NK100": ""  # 연속조회키100
         }
         
-        response = requests.get(url, headers=headers, params=base_params)
-        result = response.json()
+        result = request_json("GET", url, headers=headers, params=base_params)
         
         return result
     except Exception as e:
@@ -426,8 +421,7 @@ def get_current_price(params):
             "tr_id": "HHDFS00000300",
         }
         
-        response = requests.get(url, headers=headers, params=params)
-        result = response.json()
+        result = request_json("GET", url, headers=headers, params=params)
         
         return result
     except Exception as e:
@@ -457,8 +451,7 @@ def get_overseas_nccs(params):
             "tr_id": tr_id,
         }
         
-        response = requests.get(url, headers=headers, params=params)
-        result = response.json()
+        result = request_json("GET", url, headers=headers, params=params)
         
         # 모의투자에서는 nccs_qty(미체결수량)가 0보다 큰 항목만 필터링
         if "openapivts" in settings.kis_base_url and 'output' in result and isinstance(result['output'], list):
@@ -488,40 +481,10 @@ def get_overseas_order_detail(params):
         }
         
         logger.debug(f"API 요청: {url}, 파라미터: {params}")
-        response = requests.get(url, headers=headers, params=params)
-        logger.debug(f"API 응답 상태 코드: {response.status_code}")
-        
-        if response.status_code == 404:
-            # 404 오류인 경우 빈 결과 반환
-            return {
-                "rt_cd": "0",
-                "msg_cd": "NODATA",
-                "msg1": "모의투자 환경에서는 해당 API를 사용할 수 없습니다.",
-                "output": []
-            }
-        
-        if not response.text:
-            return {
-                "rt_cd": "0",
-                "msg_cd": "NODATA",
-                "msg1": "응답 데이터가 없습니다.",
-                "output": []
-            }
-        
-        try:
-            result = response.json()
-            # 정상적인 결과 처리
-            if 'output' in result and isinstance(result['output'], list):
-                result['output'] = [item for item in result['output'] if int(item.get('nccs_qty', 0)) > 0]
-            return result
-        except ValueError:
-            # JSON 파싱 오류 시 빈 결과 반환
-            return {
-                "rt_cd": "0",
-                "msg_cd": "PARSEERR",
-                "msg1": "응답 파싱 오류",
-                "output": []
-            }
+        result = request_json("GET", url, headers=headers, params=params)
+        if 'output' in result and isinstance(result['output'], list):
+            result['output'] = [item for item in result['output'] if int(item.get('nccs_qty', 0)) > 0]
+        return result
     except Exception as e:
         logger.error(f"주문체결내역 조회 중 오류 발생: {e}")
         # 예외 발생 시 빈 결과 반환
@@ -569,35 +532,7 @@ def get_overseas_order_resv_list(params):
         }
         
         logger.debug(f"예약주문조회 API 요청: {url}, 파라미터: {params}")
-        response = requests.get(url, headers=headers, params=params)
-        logger.debug(f"API 응답 상태 코드: {response.status_code}")
-        
-        if response.status_code != 200:
-            return {
-                "rt_cd": "1",
-                "msg_cd": f"HTTP_{response.status_code}",
-                "msg1": f"API 호출 실패: HTTP {response.status_code}",
-                "output": []
-            }
-        
-        if not response.text:
-            return {
-                "rt_cd": "0",
-                "msg_cd": "NODATA",
-                "msg1": "응답 데이터가 없습니다.",
-                "output": []
-            }
-        
-        try:
-            result = response.json()
-            return result
-        except ValueError:
-            return {
-                "rt_cd": "1",
-                "msg_cd": "PARSEERR",
-                "msg1": "응답 파싱 오류",
-                "output": []
-            }
+        return request_json("GET", url, headers=headers, params=params)
     except Exception as e:
         logger.error(f"예약주문조회 중 오류 발생: {e}")
         return {
@@ -663,30 +598,10 @@ def order_overseas_stock(order_data):
             request_body["ORD_DVSN"] = "00"  # 지정가
         
         logger.debug(f"해외주식 주문 API 요청: {url}, 본문: {request_body}")
-        response = requests.post(url, headers=headers, json=request_body)
-        logger.debug(f"API 응답 상태 코드: {response.status_code}")
-        
-        # 응답 처리
-        if response.status_code != 200:
-            return {
-                "rt_cd": "1",
-                "msg_cd": f"HTTP_{response.status_code}",
-                "msg1": f"API 호출 실패: HTTP {response.status_code}",
-                "output": {}
-            }
-        
-        try:
-            result = response.json()
-            # 주문 내역을 DB에 저장 (옵션)
-            # save_order_history(request_body, result)
-            return result
-        except ValueError:
-            return {
-                "rt_cd": "1",
-                "msg_cd": "PARSEERR",
-                "msg1": "응답 파싱 오류",
-                "output": {}
-            }
+        result = request_json("POST", url, headers=headers, json=request_body)
+        # 주문 내역을 DB에 저장 (옵션)
+        # save_order_history(request_body, result)
+        return result
     except Exception as e:
         logger.exception(f"해외주식 주문 중 오류 발생: {e}")
         return {

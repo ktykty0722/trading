@@ -1,13 +1,14 @@
 import logging
 import pandas as pd
-import requests
 import time
 from datetime import datetime, timedelta
+import pytz
 from app.db.supabase import supabase
 import numpy as np
 from app.core.config import settings
 from app.services.balance_service import get_overseas_balance, get_all_overseas_balances
 from app.services.volume_service import get_overseas_daily_price
+from app.services.http_client import request_json
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class StockRecommendationService:
 
             return round(atr, 4)
         except Exception as e:
-            print(f"  ATR 계산 오류: {e}")
+            logger.warning(f"ATR 계산 오류: {e}")
             return None
 
     def calculate_adx(self, daily_data, period=14):
@@ -200,7 +201,7 @@ class StockRecommendationService:
 
             return round(adx, 2)
         except Exception as e:
-            print(f"  ADX 계산 오류: {e}")
+            logger.warning(f"ADX 계산 오류: {e}")
             return None
 
     def generate_technical_recommendations(self):
@@ -397,9 +398,9 @@ class StockRecommendationService:
 
         if balance_result.get("rt_cd") == "0" and "output1" in balance_result:
             holdings = balance_result.get("output1", [])
-            print(f"보유 주식 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
+            logger.info(f"보유 주식 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
         else:
-            print(f"보유 주식 정보를 가져오는데 실패했습니다: {balance_result.get('msg1', '알 수 없는 오류')}")
+            logger.warning(f"보유 주식 정보를 가져오는데 실패했습니다: {balance_result.get('msg1', '알 수 없는 오류')}")
         
         # 보유 주식의 티커 목록 생성
         holding_tickers = [item.get("ovrs_pdno") for item in holdings if item.get("ovrs_pdno")]
@@ -410,7 +411,7 @@ class StockRecommendationService:
         if not all_tickers:
             return {"message": "분석할 티커가 없습니다", "results": []}
 
-        print(f"분석할 티커 목록 ({len(all_tickers)}개): {all_tickers}")
+        logger.info(f"분석할 티커 목록 ({len(all_tickers)}개): {all_tickers}")
 
         alpha_key = settings.ALPHA_VANTAGE_API_KEY
         relevance_threshold = 0.2
@@ -421,19 +422,14 @@ class StockRecommendationService:
         results = []
         for ticker in all_tickers:
             logger.info(f"{ticker} 감성 분석 중...")
-            resp = requests.get("https://www.alphavantage.co/query", params={
+            response_json = request_json("GET", "https://www.alphavantage.co/query", params={
                 "function": "NEWS_SENTIMENT",
                 "tickers":  ticker,
                 "time_from": since,
                 "limit":    100,
                 "apikey":   alpha_key,
             })
-            if resp.status_code != 200:
-                results.append({"ticker": ticker, "message": "API 호출 실패"})
-                time.sleep(sleep_interval)
-                continue
-
-            feed = resp.json().get("feed", [])
+            feed = response_json.get("feed", [])
             scores = [
                 float(s["ticker_sentiment_score"])
                 for article in feed
@@ -478,8 +474,8 @@ class StockRecommendationService:
         필터링:
         - ML 예측 상승확률 ≥ 2%
         - 기술적 신호 (골든크로스, RSI 매수구간, MACD 매수) 중 2개 이상
-        - composite_score ≥ 0.3
-        - VIX > 35이면 매수 전면 중단
+        - composite_score ≥ 동적 임계치(system_config.composite_score_threshold, 기본 0.3)
+        - VIX > 동적 임계치(system_config.vix_halt_threshold, 기본 27)면 매수 전면 중단
         """
         try:
             # 1. 기술적 지표 조회 (stock_signals)
@@ -552,12 +548,24 @@ class StockRecommendationService:
                     vix_value = float(vix_response.data[0]["vix"])
                     logger.info(f"VIX 지수: {vix_value}")
             except Exception as e:
-                print(f"  VIX 조회 실패: {e}")
+                logger.warning(f"VIX 조회 실패: {e}")
 
-            # 6. 하드 블록: VIX > 35이면 매수 전면 중단 (극단적 공포장)
-            if vix_value is not None and vix_value > 35:
-                print(f"  VIX {vix_value:.1f} > 35: 공포장 매수 중단")
-                return {"message": f"VIX {vix_value:.1f} - 공포장으로 매수를 중단합니다", "results": []}
+            vix_halt_threshold = settings.VIX_HALT_THRESHOLD
+            score_threshold = 0.3
+            try:
+                vix_cfg = supabase.table("system_config").select("value").eq("key", "vix_halt_threshold").execute().data
+                score_cfg = supabase.table("system_config").select("value").eq("key", "composite_score_threshold").execute().data
+                if vix_cfg:
+                    vix_halt_threshold = float(vix_cfg[0]["value"])
+                if score_cfg:
+                    score_threshold = float(score_cfg[0]["value"])
+            except Exception as e:
+                logger.warning(f"system_config 로딩 실패(기본값 사용): {e}")
+
+            # 6. 하드 블록: VIX 임계치 초과 시 매수 전면 중단
+            if vix_value is not None and vix_value > vix_halt_threshold:
+                logger.info(f"VIX {vix_value:.1f} > {vix_halt_threshold:.1f}: 신규 매수 중단")
+                return {"message": f"VIX {vix_value:.1f} - 변동성 게이트로 매수를 중단합니다", "results": []}
 
             # 7. 매수 후보 필터링 + 종합 점수 계산
             final_results = []
@@ -565,7 +573,7 @@ class StockRecommendationService:
                 # RSI > 80 하드블록: 과매수 구간은 무조건 제외
                 rsi = item["rsi"]
                 if rsi > 80:
-                    print(f"  {item['stock_name']}({item['ticker']}) RSI {rsi:.1f} > 80 과매수 제외")
+                    logger.info(f"{item['stock_name']}({item['ticker']}) RSI {rsi:.1f} > 80 과매수 제외")
                     continue
 
                 raw_sentiment = item["sentiment_score"] if item["sentiment_score"] is not None else 0.0
@@ -659,8 +667,7 @@ class StockRecommendationService:
                 item["vix_value"] = vix_value
                 item["composite_score"] = round(composite_score, 4)
 
-                # 하한선: composite_score 0.3 미만이면 매수 안 함
-                if composite_score >= 0.3:
+                if composite_score >= score_threshold:
                     final_results.append(item)
 
             final_results.sort(key=lambda x: x["composite_score"], reverse=True)
@@ -707,7 +714,7 @@ class StockRecommendationService:
                     "sell_candidates": []
                 }
             
-            print(f"보유 종목 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
+            logger.info(f"보유 종목 정보를 성공적으로 가져왔습니다. 총 {len(holdings)}개 종목 보유 중")
             
             # 2. 티커와 한글명 매핑 생성
             ticker_to_korean = {}
@@ -752,7 +759,7 @@ class StockRecommendationService:
                     for tr in tr_response.data:
                         trade_records_map[tr["ticker"]] = tr
             except Exception as e:
-                print(f"trade_records 조회 실패 (고정 비율 폴백): {e}")
+                logger.warning(f"trade_records 조회 실패 (고정 비율 폴백): {e}")
 
             # 6. 매도 대상 종목 식별
             sell_candidates = []
@@ -784,6 +791,19 @@ class StockRecommendationService:
                         sell_reasons.append(f"익절(고정): +{price_change_percent:.2f}%")
                     elif price_change_percent <= -7:
                         sell_reasons.append(f"손절(고정): {price_change_percent:.2f}%")
+
+                # 조건 1-2: 시간 청산 (기본 7 영업일 경과 & 수익률 < +1%)
+                if trade_record and trade_record.get("buy_date"):
+                    try:
+                        buy_date = pd.Timestamp(trade_record["buy_date"]).tz_localize(None)
+                        now_date = pd.Timestamp(datetime.now(pytz.timezone(settings.MARKET_TIMEZONE)).date())
+                        holding_days = max(len(pd.bdate_range(buy_date.date(), now_date.date())) - 1, 0)
+                        if holding_days >= settings.TIME_STOP_BUSINESS_DAYS and price_change_percent < 1.0:
+                            sell_reasons.append(
+                                f"시간 청산: {holding_days}영업일 보유 & 수익률 {price_change_percent:.2f}% < +1.00%"
+                            )
+                    except Exception as e:
+                        logger.warning(f"{ticker} 시간 청산 계산 실패: {e}")
 
                 # 기술적 지표 (stock_signals 테이블, ticker 기반 매칭)
                 tech_record = None

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from app.services.stock_recommendation_service import StockRecommendationService
+from app.services.backtest_service import BacktestService
 from app.utils.scheduler import run_auto_buy_now, start_scheduler, stop_scheduler, stock_scheduler, run_auto_sell_now, start_sell_scheduler, stop_sell_scheduler, get_scheduler_status
 
 router = APIRouter()
 service = StockRecommendationService()
+backtest_service = BacktestService()
 
 @router.get("/recommended-stocks", response_model=dict)
 async def get_recommended_stocks_route():
@@ -67,6 +69,20 @@ async def get_recommended_stocks_with_technical_and_sentiment():
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"기술적 지표 및 감정 분석 조회 중 오류 발생: {str(e)}")
+
+
+@router.get("/recommended-stocks/backtest/phase4", response_model=dict)
+async def run_phase4_backtest_validation():
+    """
+    Phase4 백테스트 검증:
+    - 비용(슬리피지/수수료) 반영
+    - 파라미터 스윕(score threshold, holding days)
+    - 단순 walk-forward(in/out sample) 리포트
+    """
+    try:
+        return backtest_service.run_phase4_validation()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Phase4 백테스트 검증 중 오류 발생: {str(e)}")
 
 @router.post("/recommended-stocks/generate-complete-analysis", response_model=dict)
 async def generate_complete_analysis():
