@@ -238,9 +238,11 @@ class StockRecommendationService:
         df.bfill(inplace=True)
 
         signals = []
+        skipped_tickers = []
         for ticker in self.tickers:
             if ticker not in df.columns:
                 logger.warning(f"{ticker}: stock_daily_prices에 데이터 없음")
+                skipped_tickers.append({"ticker": ticker, "reason": "no_price_data"})
                 continue
 
             prices = df[ticker]
@@ -312,6 +314,27 @@ class StockRecommendationService:
                     "adx":              adx,
                     "daily_change_pct": daily_change_pct,
                 })
+            else:
+                skipped_tickers.append({
+                    "ticker": ticker,
+                    "reason": "insufficient_indicator_data",
+                    "price_points": int(prices.dropna().shape[0]),
+                    "latest_date": latest.strftime("%Y-%m-%d"),
+                })
+
+        if not signals:
+            return {
+                "message": "생성 가능한 기술적 지표 데이터가 없습니다. stock_daily_prices에 최소 50거래일 이상의 데이터가 필요합니다.",
+                "data": [],
+                "meta": {
+                    "active_stock_tickers": len(self.tickers),
+                    "price_rows": int(raw_df.shape[0]),
+                    "price_dates": int(df.shape[0]),
+                    "latest_price_date": df.index[-1].strftime("%Y-%m-%d") if not df.empty else None,
+                    "required_price_dates": 50,
+                    "skipped_tickers": skipped_tickers[:20],
+                },
+            }
 
         # stock_signals 테이블 upsert (date+ticker unique)
         try:

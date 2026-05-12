@@ -19,6 +19,9 @@ from app.utils.scheduler import (
 )
 from app.telegram_bot.bot import start_bot, stop_bot
 
+for noisy_logger in ("httpx", "httpcore"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
