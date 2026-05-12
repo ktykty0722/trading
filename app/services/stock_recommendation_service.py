@@ -222,6 +222,7 @@ class StockRecommendationService:
             .in_("ticker", self.tickers) \
             .gte("date", start_date_str) \
             .order("date") \
+            .limit(max(len(self.tickers) * self.lookback_days, 10000)) \
             .execute()
 
         if not resp.data:
