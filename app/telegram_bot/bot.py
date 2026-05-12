@@ -191,9 +191,11 @@ async def cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             icon = "❌"
             pnl  = "미체결"
         date = r["created_at"][:10] if r.get("created_at") else ""
+        sell_price = r.get("sell_price")
+        sell_price_str = f"${float(sell_price):.2f}" if sell_price is not None else "N/A"
         lines.append(
             f"{icon} <b>{r['stock_name']} ({r['ticker']})</b> {date}\n"
-            f"  매수: ${r['buy_price']:.2f} → 매도: ${r['sell_price']:.2f if r.get('sell_price') else 0:.2f} | 손익: {pnl}\n"
+            f"  매수: ${r['buy_price']:.2f} → 매도: {sell_price_str} | 손익: {pnl}\n"
         )
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 

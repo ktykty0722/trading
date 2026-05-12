@@ -69,7 +69,7 @@ def check_daily_loss_limit() -> tuple[bool, str]:
 
     except Exception as e:
         logger.error(f"일일 손실 한도 체크 오류: {e}")
-        return True, "체크 오류 — 통과"
+        return False, f"일일 손실 한도 체크 오류 — 매수 차단: {e}"
 
 
 # ============================================================
@@ -98,7 +98,7 @@ def check_vix_halt_gate(vix_value: float | None) -> tuple[bool, str]:
     VIX 임계치 초과 시 신규 매수 차단.
     """
     if vix_value is None:
-        return True, "VIX 없음 — 통과"
+        return False, "VIX 없음 — 신규 매수 차단"
 
     threshold = _get_config("vix_halt_threshold", settings.VIX_HALT_THRESHOLD)
     if float(vix_value) > threshold:
@@ -186,7 +186,7 @@ def check_liquidity_filter(ticker: str) -> tuple[bool, str]:
         return True, f"유동성 통과(ADV20 ${adv20:,.0f}, Price ${latest_close:.2f})"
     except Exception as e:
         logger.error(f"유동성 필터 체크 오류 ({ticker}): {e}")
-        return True, "유동성 체크 오류 — 통과"
+        return False, f"유동성 체크 오류 — 매수 차단: {e}"
 
 
 def check_correlation_limit(
@@ -214,7 +214,7 @@ def check_correlation_limit(
             or []
         )
         if not rows:
-            return True, "가격 데이터 없음 — 상관필터 통과"
+            return False, "가격 데이터 없음 — 상관필터 차단"
 
         df = pd.DataFrame(rows)
         df["date"] = pd.to_datetime(df["date"])
@@ -223,11 +223,11 @@ def check_correlation_limit(
         returns = pivot.pct_change().dropna()
 
         if ticker not in returns.columns or len(returns) < 20:
-            return True, "상관 계산 샘플 부족 — 통과"
+            return False, "상관 계산 샘플 부족 — 매수 차단"
 
         target_corr = returns.corr()[ticker].drop(labels=[ticker], errors="ignore")
         if target_corr.empty:
-            return True, "비교 대상 상관 없음 — 통과"
+            return False, "비교 대상 상관 없음 — 매수 차단"
 
         max_corr_ticker = target_corr.abs().idxmax()
         max_corr = float(target_corr[max_corr_ticker])
@@ -236,7 +236,7 @@ def check_correlation_limit(
         return True, f"상관필터 통과(최대 |corr|={abs(max_corr):.2f})"
     except Exception as e:
         logger.error(f"상관계수 필터 체크 오류 ({ticker}): {e}")
-        return True, "상관필터 체크 오류 — 통과"
+        return False, f"상관필터 체크 오류 — 매수 차단: {e}"
 
 
 def get_mdd_risk_state() -> tuple[bool, float, str]:
@@ -288,7 +288,7 @@ def get_mdd_risk_state() -> tuple[bool, float, str]:
         return True, 1.0, f"MDD {mdd_abs:.2f}% (정상)"
     except Exception as e:
         logger.error(f"MDD 리스크 상태 계산 오류: {e}")
-        return True, 1.0, "MDD 계산 오류 — 기본 배수 1.0"
+        return False, 0.0, f"MDD 계산 오류 — 신규 매수 차단: {e}"
 
 
 # ============================================================
@@ -328,7 +328,7 @@ def check_sector_concentration(ticker: str, holding_tickers: set) -> tuple[bool,
 
     except Exception as e:
         logger.error(f"섹터 집중도 체크 오류 ({ticker}): {e}")
-        return True, "체크 오류 — 통과"
+        return False, f"섹터 집중도 체크 오류 — 매수 차단: {e}"
 
 
 # ============================================================

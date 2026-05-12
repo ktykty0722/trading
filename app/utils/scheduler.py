@@ -4,7 +4,8 @@ import time
 import pytz
 from datetime import datetime, timedelta
 import threading
-from app.services.stock_recommendation_service import StockRecommendationService, TICKER_TO_EXCHANGE, EXCHANGE_TO_API
+from app.services.stock_recommendation_service import StockRecommendationService, EXCHANGE_TO_API
+from app.services.llm_review_service import review_buy_candidates
 from app.services.balance_service import get_current_price, order_overseas_stock, get_all_overseas_balances, inquire_psamount, get_overseas_nccs
 from app.services.volume_service import get_overseas_daily_price
 from app.db.supabase import supabase
@@ -585,6 +586,16 @@ class StockScheduler:
         max_new_entries = settings.MAX_NEW_ENTRIES_PER_DAY
         buy_candidates = buy_candidates[:max_new_entries]
         logger.info(f"정량 필터 통과: {len(buy_candidates)}개 종목 매수 진행 (일일 최대 {max_new_entries}개)")
+
+        llm_review = review_buy_candidates(buy_candidates, vix_value)
+        buy_candidates = llm_review.get("reviewed_candidates", [])
+        held_count = len(llm_review.get("held_candidates", []))
+        if not buy_candidates:
+            logger.info(f"LLM 최종 검토 결과 BUY 없음 (HOLD/FAIL {held_count}개). 매수를 중단합니다.")
+            notify(f"⏸ <b>LLM 최종 검토로 매수 없음</b>\n{llm_review.get('llm_reasoning', '')[:300]}")
+            return
+        logger.info(f"LLM 최종 검토 통과: {len(buy_candidates)} BUY / {held_count} HOLD")
+
         can_trade_mdd, position_multiplier, mdd_reason = get_mdd_risk_state()
         if not can_trade_mdd:
             logger.warning(f"MDD 리스크 게이트로 신규 매수 중단: {mdd_reason}")
@@ -610,7 +621,7 @@ class StockScheduler:
                 
                 # 거래소 코드 결정 (매핑 테이블 기반)
                 pure_ticker = ticker.split(".")[0] if "." in ticker else ticker
-                exchange_code = TICKER_TO_EXCHANGE.get(pure_ticker, "NASD")
+                exchange_code = self.recommendation_service.ticker_to_exchange.get(pure_ticker, "NASD")
                 
                 # 이미 보유 중이거나 이번 회차에서 주문한 종목인지 확인
                 if pure_ticker in holding_tickers:

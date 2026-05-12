@@ -56,6 +56,11 @@ _token_cache = {
 _last_refresh_time = 0  # 마지막 토큰 갱신 시간
 _refresh_lock = Lock()  # 동시성 방지 락
 
+
+def _is_mock_trading() -> bool:
+    """현재 설정이 KIS 모의투자인지 반환."""
+    return bool(settings.KIS_USE_MOCK)
+
 def get_access_token():
     """한국투자증권 API 접근 토큰 발급 또는 캐시된 토큰 반환"""
     global _token_cache, _last_refresh_time
@@ -83,13 +88,15 @@ def get_access_token():
         
         try:
             # 테이블에서 토큰 레코드 조회
-            response = supabase.table("access_tokens").select("*").order("created_at", desc=True).limit(1).execute()
+            response = supabase.table("access_tokens").select("*").order("updated_at", desc=True).limit(1).execute()
             
             if response.data:
                 token_data = response.data[0]
                 
                 # 이 부분을 수정 - auth_service의 parse_expiration_date 함수 사용
-                expiration_time = parse_expiration_date(token_data["expiration_time"])
+                expiration_time = parse_expiration_date(
+                    token_data.get("expires_at") or token_data.get("expiration_time")
+                )
                 
                 if now < expiration_time:  # 토큰이 아직 유효한 경우
                     logger.debug(f"기존 토큰 사용 - 만료까지 남은 시간: {(expiration_time - now)}")
@@ -143,7 +150,9 @@ def refresh_token_with_retry(record_id=None, max_retries=3):
             token_data = {
                 "access_token": access_token,
                 "expiration_time": expiration_time.isoformat(),
-                "is_active": True
+                "expires_at": expiration_time.isoformat(),
+                "token_type": "kis_mock" if _is_mock_trading() else "kis_real",
+                "updated_at": now.isoformat(),
             }
             
             # 레코드 ID가 있으면 업데이트, 없으면 새로 생성
@@ -236,7 +245,7 @@ def get_overseas_balance(ovrs_excg_cd="NASD"):
         "authorization": f"Bearer {access_token}",
         "appkey": settings.KIS_APPKEY,
         "appsecret": settings.KIS_APPSECRET,
-        "tr_id": "VTTS3012R"  # 해외주식 잔고 조회 TR ID
+        "tr_id": "VTTS3012R" if _is_mock_trading() else "TTTS3012R"  # 해외주식 잔고 조회 TR ID
     }
     
     params = {
@@ -279,6 +288,7 @@ def get_all_overseas_balances():
     # 주요 거래소 목록
     exchanges = ["NASD", "NYSE", "AMEX"]
     all_holdings = []
+    failures = []
     
     for exchange in exchanges:
         try:
@@ -289,14 +299,26 @@ def get_all_overseas_balances():
                 if holdings:
                     all_holdings.extend(holdings)
             else:
-                logger.warning(f"{exchange} 거래소 잔고 조회 실패: {result.get('msg1', '알 수 없는 오류')}")
+                msg = result.get('msg1', '알 수 없는 오류')
+                failures.append(f"{exchange}: {msg}")
+                logger.warning(f"{exchange} 거래소 잔고 조회 실패: {msg}")
 
             # API 요청 간 지연 (KIS 초당 거래건수 제한 방지)
             time.sleep(1)
 
         except Exception as e:
+            failures.append(f"{exchange}: {e}")
             logger.error(f"{exchange} 거래소 잔고 조회 중 오류: {e}")
     
+    if failures:
+        return {
+            "rt_cd": "1",
+            "msg_cd": "BALANCE_QUERY_FAILED",
+            "msg1": "일부 거래소 잔고 조회 실패: " + "; ".join(failures),
+            "output1": [],
+            "output2": {}
+        }
+
     # 통합된 잔고 정보 반환
     if all_holdings:
         return {
@@ -323,7 +345,7 @@ def overseas_order_resv(order_data):
         url = f"{settings.kis_base_url}/uapi/overseas-stock/v1/trading/order-resv"
         
         # 모의투자 여부 확인
-        is_virtual = "openapivts" in settings.kis_base_url
+        is_virtual = _is_mock_trading()
         
         # 매수/매도 여부 및 거래소에 따라 TR_ID 결정
         is_buy = order_data.get("is_buy", True)
@@ -434,7 +456,7 @@ def get_overseas_nccs(params):
         access_token = get_access_token()
         
         # 모의투자에서는 직접 API가 지원되지 않으므로 주문체결내역 API로 대체
-        if "openapivts" in settings.kis_base_url:
+        if _is_mock_trading():
             # 모의투자 환경에서는 주문체결내역 API 사용
             url = f"{settings.kis_base_url}/uapi/overseas-stock/v1/trading/inquire-order"
             tr_id = "VTTS3035R"  # 모의투자 주문체결내역 TR_ID
@@ -454,7 +476,7 @@ def get_overseas_nccs(params):
         result = request_json("GET", url, headers=headers, params=params)
         
         # 모의투자에서는 nccs_qty(미체결수량)가 0보다 큰 항목만 필터링
-        if "openapivts" in settings.kis_base_url and 'output' in result and isinstance(result['output'], list):
+        if _is_mock_trading() and 'output' in result and isinstance(result['output'], list):
             result['output'] = [item for item in result['output'] if int(item.get('nccs_qty', 0)) > 0]
         
         return result
@@ -499,7 +521,7 @@ def get_overseas_order_resv_list(params):
     """해외주식 예약주문 조회"""
     try:
         # 모의투자 환경 확인
-        is_virtual = "openapivts" in settings.kis_base_url
+        is_virtual = _is_mock_trading()
         
         if is_virtual:
             # 모의투자에서는 지원되지 않으므로 안내 메시지 반환
@@ -555,7 +577,7 @@ def order_overseas_stock(order_data):
             order_data["ACNT_PRDT_CD"] = settings.KIS_ACNT_PRDT_CD
             
         # 모의투자 여부 확인
-        is_virtual = "openapivts" in settings.kis_base_url
+        is_virtual = _is_mock_trading()
         
         # 매수/매도 여부 확인
         is_buy = order_data.get("is_buy", True)

@@ -8,7 +8,7 @@ router = APIRouter()
 @router.post("/review-buy-candidates", summary="LLM 매수 후보 최종 검토")
 def llm_review_buy_candidates():
     """
-    현재 매수 후보 종목을 Claude API로 최종 검토합니다.
+    현재 매수 후보 종목을 OpenAI API로 최종 검토합니다.
     기존 매수 로직(ML + 기술 + 감성 + 점수)을 통과한 종목에 대해
     LLM이 거부권을 행사합니다 (BUY → HOLD만 가능).
     """

@@ -1,6 +1,5 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from typing import List
 import os
 from dotenv import load_dotenv
 
@@ -12,10 +11,11 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "1.0.0"
 
     DEBUG: bool = Field(default=False, description="디버그 모드 활성화 여부")
+    API_AUTH_TOKEN: str = Field(default="", description="API 인증 토큰")
 
     # 운영환경에서는 .env의 CORS_ORIGINS에 실제 도메인 지정
     # 예) CORS_ORIGINS=https://yourdomain.com,http://localhost:3000
-    CORS_ORIGINS: List[str] = Field(default=["*"], description="허용할 CORS 출처 목록")
+    CORS_ORIGINS: str = Field(default="*", description="허용할 CORS 출처 목록")
 
     SUPABASE_URL: str = Field(default="", description="Supabase 프로젝트 URL")
     SUPABASE_KEY: str = Field(default="", description="Supabase anon key")
@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     def kis_base_url(self) -> str:
         """사용할 한국투자증권 API URL 반환"""
         return self.KIS_BASE_URL if self.KIS_USE_MOCK else self.KIS_REAL_URL
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """쉼표 구분 CORS_ORIGINS 값을 FastAPI 형식으로 반환."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

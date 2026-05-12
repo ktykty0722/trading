@@ -1,8 +1,10 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api import api_router
@@ -35,13 +37,41 @@ app = FastAPI(title="주식 분석 및 추천 API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(api_router)
+
+
+PUBLIC_PATHS = {"/", "/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    expected_token = settings.API_AUTH_TOKEN
+    if not expected_token:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "API_AUTH_TOKEN is not configured; API access is disabled."},
+        )
+
+    auth_header = request.headers.get("authorization", "")
+    bearer_token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    api_key = request.headers.get("x-api-key", "")
+
+    if not (
+        secrets.compare_digest(bearer_token, expected_token)
+        or secrets.compare_digest(api_key, expected_token)
+    ):
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    return await call_next(request)
 
 
 @app.get("/")

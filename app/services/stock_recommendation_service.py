@@ -33,14 +33,19 @@ def _load_stock_universe() -> list[dict]:
 class StockRecommendationService:
 
     def __init__(self):
+        self._refresh_universe()
+        self.lookback_days = 180
+
+    def _refresh_universe(self):
+        """DB의 활성 종목 목록을 다시 읽어 Telegram/DB 변경을 즉시 반영."""
         universe = _load_stock_universe()
         # ETF 제외한 종목 ticker 리스트
         self.tickers = [u["ticker"] for u in universe if not u.get("is_etf", False)]
+        self.active_tickers = {u["ticker"] for u in universe}
         # ticker → name_ko 매핑
         self.ticker_to_name = {u["ticker"]: u["name_ko"] for u in universe}
         # ticker → exchange 매핑
         self.ticker_to_exchange = {u["ticker"]: u["exchange"] for u in universe}
-        self.lookback_days = 180
 
     def calculate_sma(self, series, period):
         """단순 이동평균(SMA) 계산"""
@@ -206,6 +211,7 @@ class StockRecommendationService:
 
     def generate_technical_recommendations(self):
         """기술적 지표를 계산하고 stock_signals 테이블에 저장"""
+        self._refresh_universe()
         end_date = datetime.now()
         start_date = end_date - timedelta(days=self.lookback_days)
         start_date_str = start_date.strftime("%Y-%m-%d")
@@ -320,6 +326,7 @@ class StockRecommendationService:
         """
         stock_predictions 테이블에서 상승확률 ≥ 3% 종목을 반환합니다.
         """
+        self._refresh_universe()
         # 가장 최근 예측일 기준 조회
         resp = supabase.table("stock_predictions").select("*").gte("rise_probability", 3).order("rise_probability", desc=True).execute()
         if not resp.data:
@@ -328,6 +335,9 @@ class StockRecommendationService:
         df = pd.DataFrame(resp.data)
         # 같은 ticker의 가장 최신 예측만 유지
         df["date"] = pd.to_datetime(df["date"])
+        df = df[df["ticker"].isin(self.active_tickers)]
+        if df.empty:
+            return {"message": "활성 종목 중 추천 주식이 없습니다", "recommendations": []}
         df = df.sort_values("date", ascending=False).drop_duplicates(subset="ticker")
 
         recommendations = []
@@ -390,7 +400,7 @@ class StockRecommendationService:
         recommendations = stock_recs.get("recommendations", [])
         
         # 추천 주식의 티커 목록 생성
-        recommended_tickers = [STOCK_TO_TICKER.get(rec["Stock"]) for rec in recommendations if rec["Stock"] in STOCK_TO_TICKER]
+        recommended_tickers = [rec["Stock"] for rec in recommendations]
         
         # 보유 주식 정보 가져오기 (전체 거래소: NASD, NYSE, AMEX)
         balance_result = get_all_overseas_balances()
@@ -474,10 +484,11 @@ class StockRecommendationService:
         필터링:
         - ML 예측 상승확률 ≥ 2%
         - 기술적 신호 (골든크로스, RSI 매수구간, MACD 매수) 중 2개 이상
-        - composite_score ≥ 동적 임계치(system_config.composite_score_threshold, 기본 0.3)
+        - composite_score ≥ 동적 임계치(system_config.min_composite_score, 기본 0.3)
         - VIX > 동적 임계치(system_config.vix_halt_threshold, 기본 27)면 매수 전면 중단
         """
         try:
+            self._refresh_universe()
             # 1. 기술적 지표 조회 (stock_signals)
             tech_response = supabase.table("stock_signals").select("*").order("date", desc=True).execute()
             if not tech_response.data:
@@ -512,6 +523,8 @@ class StockRecommendationService:
             results = []
             for rec in recommendations:
                 ticker    = rec["Stock"]
+                if ticker not in self.active_tickers:
+                    continue
                 tech_data = tech_map.get(ticker)
                 if tech_data is None:
                     continue
@@ -554,7 +567,9 @@ class StockRecommendationService:
             score_threshold = 0.3
             try:
                 vix_cfg = supabase.table("system_config").select("value").eq("key", "vix_halt_threshold").execute().data
-                score_cfg = supabase.table("system_config").select("value").eq("key", "composite_score_threshold").execute().data
+                score_cfg = supabase.table("system_config").select("value").eq("key", "min_composite_score").execute().data
+                if not score_cfg:
+                    score_cfg = supabase.table("system_config").select("value").eq("key", "composite_score_threshold").execute().data
                 if vix_cfg:
                     vix_halt_threshold = float(vix_cfg[0]["value"])
                 if score_cfg:

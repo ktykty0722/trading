@@ -233,8 +233,15 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     access_token    TEXT        NOT NULL,
     expiration_time TEXT,
     expires_at      TIMESTAMPTZ,
+    is_active       BOOLEAN     DEFAULT true,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 
 -- ============================================================

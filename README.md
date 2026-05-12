@@ -212,9 +212,13 @@ TELEGRAM_CHAT_ID=123456789
 # ===== 운영 =====
 DEBUG=false
 CORS_ORIGINS=http://localhost:3000
+API_AUTH_TOKEN=충분히_긴_랜덤_토큰
 ```
 
 **절대 Git에 `.env`를 커밋하지 마세요** (`.gitignore`에 이미 포함되어 있음).
+
+API 호출 시 `Authorization: Bearer <API_AUTH_TOKEN>` 또는 `X-API-Key: <API_AUTH_TOKEN>` 헤더가 필요합니다.
+`API_AUTH_TOKEN`이 비어 있으면 `/health`, `/docs` 외 API 접근은 차단됩니다.
 
 ---
 
@@ -343,8 +347,8 @@ crontab -e
 | `min_composite_score` | 0.3 | 매수 최소 복합 점수 |
 | `position_size_pct` | 10 | 종목당 투자 비중(%) |
 | `max_positions` | 5 | 최대 보유 종목 수 |
-| `buy_window_start` | 10:30 | 매수 시작 시간 (ET) |
-| `buy_window_end` | 11:00 | 매수 종료 시간 (ET) |
+| `buy_window_start_et` | 10:30 | 매수 시작 시간 (ET) |
+| `buy_window_end_et` | 11:00 | 매수 종료 시간 (ET) |
 | `daily_max_loss_pct` | 3 | 일일 손실 한도(%), 초과 시 당일 매매 중단 |
 | `max_sector_positions` | 3 | 동일 섹터 최대 보유 수 |
 
