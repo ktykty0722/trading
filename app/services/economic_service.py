@@ -8,6 +8,9 @@ from stock import collect_economic_data, collect_stock_prices
 
 logger = logging.getLogger(__name__)
 
+STOCK_PRICE_BACKFILL_DAYS = 365
+STOCK_PRICE_MIN_HISTORY_DAYS = 180
+
 
 def _last_weekday(dt: datetime) -> datetime:
     """주말이면 직전 금요일로 조정"""
@@ -43,6 +46,55 @@ def _get_active_tickers() -> list:
     except Exception as e:
         logger.error(f"종목 목록 조회 오류: {e}")
         return []
+
+
+def get_stock_price_start_date(tickers: list[tuple[str, str]]) -> str:
+    """
+    stock_daily_prices는 경제지표와 독립적으로 백필한다.
+    최근 1년 범위에서 활성 종목 중 하나라도 히스토리가 부족하면 1년치를 다시 수집한다.
+    """
+    fallback_start = (datetime.now() - timedelta(days=STOCK_PRICE_BACKFILL_DAYS)).strftime("%Y-%m-%d")
+    ticker_symbols = [ticker for ticker, _ in tickers]
+    if not ticker_symbols:
+        return fallback_start
+
+    try:
+        resp = (
+            supabase.table("stock_daily_prices")
+            .select("date,ticker")
+            .in_("ticker", ticker_symbols)
+            .gte("date", fallback_start)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            logger.info(f"기존 주가 데이터 없음. 주가 백필 시작일: {fallback_start}")
+            return fallback_start
+
+        dates_by_ticker = {ticker: set() for ticker in ticker_symbols}
+        latest_date = None
+        for row in rows:
+            ticker = row.get("ticker")
+            date = row.get("date")
+            if ticker in dates_by_ticker and date:
+                dates_by_ticker[ticker].add(date)
+                if latest_date is None or date > latest_date:
+                    latest_date = date
+
+        min_history = min((len(dates) for dates in dates_by_ticker.values()), default=0)
+        if min_history < STOCK_PRICE_MIN_HISTORY_DAYS:
+            logger.info(
+                f"주가 히스토리 부족(min={min_history}, required={STOCK_PRICE_MIN_HISTORY_DAYS}). "
+                f"주가 백필 시작일: {fallback_start}"
+            )
+            return fallback_start
+
+        next_date = datetime.fromisoformat(latest_date) + timedelta(days=1)
+        logger.info(f"마지막 주가 수집 날짜: {latest_date}, 다음 주가 수집 시작일: {next_date.date()}")
+        return next_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        logger.error(f"마지막 주가 수집 날짜 조회 오류: {e}")
+        return fallback_start
 
 
 def _upsert_economic_indicators(df: pd.DataFrame, storage_end: str):
@@ -128,30 +180,32 @@ async def update_economic_data_in_background(force: bool = False):
         if is_market_hours and force:
             logger.info(f"장 중이지만 강제 수집 모드로 실행합니다.")
 
-        start_date    = get_last_updated_date()
+        econ_start_date = get_last_updated_date()
         today         = datetime.now().strftime('%Y-%m-%d')
         yesterday     = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 
-        if start_date > yesterday:
-            logger.info(f"수집 시작일({start_date}) >= 어제({yesterday}). 수집할 데이터 없음.")
-            return {"success": True, "message": "최신 상태", "total_records": 0, "updated_records": 0}
-
         # 경제지표 수집
-        econ_df = collect_economic_data(start_date=start_date, end_date=today)
-
         econ_saved = 0
-        if econ_df is not None and not econ_df.empty:
-            econ_saved = _upsert_economic_indicators(econ_df, storage_end=yesterday)
-            logger.info(f"경제지표 {econ_saved}건 저장 완료")
+        if econ_start_date > yesterday:
+            logger.info(f"경제지표 수집 시작일({econ_start_date}) >= 어제({yesterday}). 경제지표는 최신 상태")
         else:
-            logger.warning("경제지표 수집 데이터 없음")
+            econ_df = collect_economic_data(start_date=econ_start_date, end_date=today)
+            if econ_df is not None and not econ_df.empty:
+                econ_saved = _upsert_economic_indicators(econ_df, storage_end=yesterday)
+                logger.info(f"경제지표 {econ_saved}건 저장 완료")
+            else:
+                logger.warning("경제지표 수집 데이터 없음")
 
         # 종목 주가 수집
         tickers = _get_active_tickers()
         stock_saved = 0
         if tickers:
-            price_df = collect_stock_prices(start_date=start_date, end_date=today, tickers=tickers)
-            stock_saved = _upsert_stock_prices(price_df, storage_end=yesterday)
+            stock_start_date = get_stock_price_start_date(tickers)
+            if stock_start_date > yesterday:
+                logger.info(f"주가 수집 시작일({stock_start_date}) >= 어제({yesterday}). 주가 데이터는 최신 상태")
+            else:
+                price_df = collect_stock_prices(start_date=stock_start_date, end_date=today, tickers=tickers)
+                stock_saved = _upsert_stock_prices(price_df, storage_end=yesterday)
             logger.info(f"주가 {stock_saved}건 저장 완료")
         else:
             logger.warning("stock_universe에 활성 종목 없음")
