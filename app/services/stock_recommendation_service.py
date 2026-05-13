@@ -12,6 +12,8 @@ from app.services.http_client import request_json
 
 logger = logging.getLogger(__name__)
 
+SUPABASE_PAGE_SIZE = 1000
+
 # 거래소 코드 → KIS API 코드 변환 (변경 없음)
 EXCHANGE_TO_API = {
     "NASD": "NAS",
@@ -88,6 +90,30 @@ class StockRecommendationService:
         macd = short_ema - long_ema
         signal = self.calculate_ema(macd, signal_period)
         return macd, signal
+
+    def _fetch_stock_price_rows(self, start_date: str) -> list[dict]:
+        """Supabase REST 기본 1000 row 제한을 피하기 위해 페이지 단위로 조회."""
+        rows = []
+        offset = 0
+
+        while True:
+            resp = (
+                supabase.table("stock_daily_prices")
+                .select("date, ticker, close")
+                .in_("ticker", self.tickers)
+                .gte("date", start_date)
+                .order("date")
+                .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+                .execute()
+            )
+            page = resp.data or []
+            rows.extend(page)
+
+            if len(page) < SUPABASE_PAGE_SIZE:
+                break
+            offset += SUPABASE_PAGE_SIZE
+
+        return rows
 
     def calculate_atr(self, daily_data, period=14):
         """KIS API 일봉 데이터로 ATR 계산
@@ -217,18 +243,12 @@ class StockRecommendationService:
         start_date_str = start_date.strftime("%Y-%m-%d")
 
         # stock_daily_prices (Long format) → Wide format pivot
-        resp = supabase.table("stock_daily_prices") \
-            .select("date, ticker, close") \
-            .in_("ticker", self.tickers) \
-            .gte("date", start_date_str) \
-            .order("date") \
-            .limit(max(len(self.tickers) * self.lookback_days, 10000)) \
-            .execute()
+        price_rows = self._fetch_stock_price_rows(start_date_str)
 
-        if not resp.data:
+        if not price_rows:
             return {"message": "주가 데이터가 없습니다", "data": []}
 
-        raw_df = pd.DataFrame(resp.data)
+        raw_df = pd.DataFrame(price_rows)
         raw_df["date"] = pd.to_datetime(raw_df["date"])
         raw_df["close"] = pd.to_numeric(raw_df["close"], errors="coerce")
 
