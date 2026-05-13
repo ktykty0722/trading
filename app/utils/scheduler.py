@@ -73,6 +73,17 @@ class StockScheduler:
             self._parse_hhmm(end_cfg, 10, 35),
         )
 
+    def _get_bool_config(self, key: str, default: bool) -> bool:
+        try:
+            row = supabase.table("system_config").select("value").eq("key", key).limit(1).execute().data
+            if not row:
+                return default
+            value = str(row[0].get("value", "")).strip().lower()
+            return value in {"1", "true", "yes", "y", "on"}
+        except Exception as e:
+            logger.warning(f"{key} 설정 조회 실패. 기본값({default}) 사용: {e}")
+            return default
+
     def _is_market_open_time(self, now_market: datetime) -> bool:
         hour = now_market.hour
         minute = now_market.minute
@@ -178,7 +189,12 @@ class StockScheduler:
     def _run_auto_buy(self):
         """자동 매수 실행 함수 - 스케줄링된 시간에 실행됨"""
         try:
-            asyncio.run(self._execute_auto_buy())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(self._execute_auto_buy())
+            else:
+                loop.create_task(self._execute_auto_buy())
             return True
         except Exception as e:
             logger.error(f"자동 매수 작업 중 오류 발생: {str(e)}", exc_info=True)
@@ -187,7 +203,12 @@ class StockScheduler:
     def _run_auto_sell(self):
         """자동 매도 실행 함수 - 1분마다 실행됨"""
         try:
-            asyncio.run(self._execute_auto_sell())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(self._execute_auto_sell())
+            else:
+                loop.create_task(self._execute_auto_sell())
             return True
         except Exception as e:
             logger.error(f"자동 매도 작업 중 오류 발생: {str(e)}", exc_info=True)
@@ -505,12 +526,15 @@ class StockScheduler:
         if not (is_weekday and is_buy_time):
             return
 
-        # 당일 이미 매수 실행했으면 스킵
-        if self._last_buy_date == ny_date:
+        buy_once_per_day = self._get_bool_config("buy_once_per_day", default=True)
+
+        # 기본은 하루 1회만 실행. 테스트 모드에서는 buy_once_per_day=false로 장중 반복 실행 가능.
+        if buy_once_per_day and self._last_buy_date == ny_date:
             return
 
         logger.info(f"자동 매수 작업 시작 (뉴욕: {now_in_ny.strftime('%Y-%m-%d %H:%M:%S')})")
-        self._last_buy_date = ny_date
+        if buy_once_per_day:
+            self._last_buy_date = ny_date
 
         now_in_korea = datetime.now(pytz.timezone('Asia/Seoul'))
         logger.info(f"매수 시간 확인: {now_in_korea.strftime('%Y-%m-%d %H:%M:%S')} (뉴욕: {now_in_ny.strftime('%Y-%m-%d %H:%M:%S')})")

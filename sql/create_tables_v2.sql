@@ -300,6 +300,7 @@ INSERT INTO system_config (key, value, description) VALUES
     ('correlation_limit',    '0.7',   '기존 보유 종목과 상관계수 임계치(초과 시 진입 금지)'),
     ('buy_window_start_et',  '10:30', '매수 시작 시간 (미국 동부시간 ET)'),
     ('buy_window_end_et',    '11:00', '매수 종료 시간 (미국 동부시간 ET)'),
+    ('buy_once_per_day',     'true',  'true이면 하루 1회만 자동매수 실행, false이면 매수 시간대에 5분마다 실행'),
     ('daily_max_loss_pct',   '3',     '일일 최대 손실 한도 (%), 초과 시 당일 매매 중단'),
     ('mdd_soft_limit_pct',   '5',     '누적 MDD 소프트 한도 (%), 초과 시 포지션 축소'),
     ('mdd_hard_limit_pct',   '10',    '누적 MDD 하드 한도 (%), 초과 시 신규 매수 중단'),
