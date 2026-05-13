@@ -6,6 +6,8 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file: .env
+    environment:
+      TZ: Asia/Seoul
     restart: unless-stopped
     volumes:
       - ./stock_scheduler.log:/app/stock_scheduler.log
@@ -34,5 +36,7 @@ services:
       context: .
       dockerfile: Dockerfile.ml
     env_file: .env
+    environment:
+      TZ: Asia/Seoul
     profiles: ["ml"]
     restart: "no"
