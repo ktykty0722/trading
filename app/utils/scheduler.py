@@ -24,7 +24,10 @@ from app.services.risk_service import (
     check_event_blackout, check_liquidity_filter,
     check_correlation_limit, get_mdd_risk_state,
 )
-from app.telegram_bot.notifier import notify_buy_order, notify_sell_order, notify_vix_alert, notify_error, notify_daily_report, notify
+from app.telegram_bot.notifier import (
+    notify_buy_order, notify_sell_order, notify_vix_alert, notify_error,
+    notify_daily_report, notify, notify_pipeline_failure, notify_pipeline_success,
+)
 
 # 로깅 설정
 logging.basicConfig(
@@ -1019,3 +1022,302 @@ def stop_mlops_scheduler():
     _mlops_running = False
     logger.info("MLOps 스케줄러 중지됨")
     return True
+
+
+# ============================================================
+# 데이터 파이프라인 자동화 (Phase 1)
+# ============================================================
+_pipeline_logger = logging.getLogger('data_pipeline')
+_pipeline_locks: dict[str, bool] = {}
+
+
+def _read_cfg(key: str, default: str) -> str:
+    try:
+        row = supabase.table("system_config").select("value").eq("key", key).limit(1).execute().data
+        if row:
+            return str(row[0].get("value", default))
+    except Exception:
+        pass
+    return default
+
+
+def _pipeline_enabled() -> bool:
+    return _read_cfg("data_pipeline_enabled", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _log_pipeline_run(job_name: str, status: str, message: str = "", duration_ms: int = 0, metadata: dict | None = None) -> None:
+    try:
+        record = {
+            "job_name": job_name,
+            "status": status,
+            "message": (message or "")[:1000],
+            "duration_ms": duration_ms,
+            "finished_at": datetime.now().isoformat(),
+        }
+        if metadata:
+            record["metadata"] = metadata
+        supabase.table("pipeline_runs").insert(record).execute()
+    except Exception as e:
+        _pipeline_logger.warning(f"pipeline_runs 기록 실패 ({job_name}): {e}")
+
+
+def _run_pipeline_job(job_name: str, fn, *args, **kwargs) -> None:
+    """공통 wrapper: 중복실행 잠금 + 로그 + Telegram 알림."""
+    if not _pipeline_enabled():
+        _pipeline_logger.info(f"[{job_name}] data_pipeline_enabled=false — 스킵")
+        _log_pipeline_run(job_name, "skipped", "pipeline disabled")
+        return
+
+    if _pipeline_locks.get(job_name):
+        _pipeline_logger.warning(f"[{job_name}] 이미 실행 중 — 중복실행 방지")
+        return
+
+    _pipeline_locks[job_name] = True
+    started = time.time()
+    try:
+        _pipeline_logger.info(f"[{job_name}] 시작")
+        result = fn(*args, **kwargs)
+        dur_ms = int((time.time() - started) * 1000)
+        # 결과 dict가 success=False면 실패 취급
+        is_success = True
+        msg = ""
+        if isinstance(result, dict):
+            is_success = bool(result.get("success", True))
+            msg = str(result.get("message", ""))
+        if is_success:
+            _pipeline_logger.info(f"[{job_name}] 성공 ({dur_ms}ms) {msg}")
+            _log_pipeline_run(job_name, "success", msg, dur_ms)
+        else:
+            _pipeline_logger.error(f"[{job_name}] 실패 ({dur_ms}ms) {msg}")
+            _log_pipeline_run(job_name, "failed", msg, dur_ms)
+            notify_pipeline_failure(job_name, msg or "unknown")
+    except Exception as e:
+        dur_ms = int((time.time() - started) * 1000)
+        _pipeline_logger.exception(f"[{job_name}] 예외: {e}")
+        _log_pipeline_run(job_name, "failed", str(e), dur_ms)
+        try:
+            notify_pipeline_failure(job_name, str(e))
+        except Exception:
+            pass
+    finally:
+        _pipeline_locks[job_name] = False
+
+
+# ── 개별 job 함수 ──────────────────────────────────────────
+def _job_economic_update():
+    _run_pipeline_job("economic_update", lambda: asyncio.run(update_economic_data_in_background(force=False)))
+
+
+def _job_technical_signals():
+    def _do():
+        result = StockRecommendationService().generate_technical_recommendations()
+        # 결과가 빈 data면 실패가 아닌 경고로 취급
+        return {"success": True, "message": result.get("message", "")}
+    _run_pipeline_job("technical_signals", _do)
+
+
+def _job_ml_prediction():
+    def _do():
+        from app.services.ml_prediction_service import run_ml_prediction
+        return run_ml_prediction()
+    _run_pipeline_job("ml_prediction", _do)
+
+
+def _job_sentiment_update():
+    def _do():
+        result = StockRecommendationService().fetch_and_store_sentiment_for_recommendations()
+        return {"success": True, "message": result.get("message", "")}
+    _run_pipeline_job("sentiment_update", _do)
+
+
+# ── 등록/해제 ──────────────────────────────────────────────
+_data_pipeline_running = False
+_data_pipeline_job_names = {
+    "_job_economic_update",
+    "_job_technical_signals",
+    "_job_ml_prediction",
+    "_job_sentiment_update",
+}
+
+
+def _parse_hhmm_str(value: str, default: str) -> str:
+    """'06:05' 형식 검증 후 그대로 반환, 잘못된 경우 default."""
+    try:
+        hh, mm = value.split(":")
+        int(hh); int(mm)
+        return f"{int(hh):02d}:{int(mm):02d}"
+    except Exception:
+        return default
+
+
+def start_data_pipeline_scheduler():
+    """system_config 시간값을 읽어 daily job 4개 등록."""
+    global _data_pipeline_running
+    if _data_pipeline_running:
+        _pipeline_logger.warning("데이터 파이프라인 스케줄러가 이미 실행 중입니다.")
+        return False
+
+    # 기존 동일 이름 job 제거 (재시작 안전)
+    for job in [j for j in schedule.jobs if j.job_func.__name__ in _data_pipeline_job_names]:
+        schedule.cancel_job(job)
+
+    econ_t = _parse_hhmm_str(_read_cfg("economic_update_time_kst", "06:05"), "06:05")
+    sig_t = _parse_hhmm_str(_read_cfg("technical_signal_time_kst", "06:20"), "06:20")
+    ml_t = _parse_hhmm_str(_read_cfg("ml_prediction_time_kst", "06:35"), "06:35")
+    sent_t = _parse_hhmm_str(_read_cfg("sentiment_update_time_kst", "07:10"), "07:10")
+
+    schedule.every().day.at(econ_t).do(_job_economic_update)
+    schedule.every().day.at(sig_t).do(_job_technical_signals)
+    schedule.every().day.at(ml_t).do(_job_ml_prediction)
+    schedule.every().day.at(sent_t).do(_job_sentiment_update)
+
+    _data_pipeline_running = True
+    _pipeline_logger.info(
+        f"데이터 파이프라인 스케줄러 시작 KST: "
+        f"economic={econ_t}, signals={sig_t}, ml={ml_t}, sentiment={sent_t}"
+    )
+    return True
+
+
+def stop_data_pipeline_scheduler():
+    global _data_pipeline_running
+    if not _data_pipeline_running:
+        return False
+    for job in [j for j in schedule.jobs if j.job_func.__name__ in _data_pipeline_job_names]:
+        schedule.cancel_job(job)
+    _data_pipeline_running = False
+    _pipeline_logger.info("데이터 파이프라인 스케줄러 중지됨")
+    return True
+
+
+# 수동 트리거(테스트용)
+def run_data_pipeline_now(job: str = "all"):
+    if job in ("all", "economic"):
+        _job_economic_update()
+    if job in ("all", "signals"):
+        _job_technical_signals()
+    if job in ("all", "ml"):
+        _job_ml_prediction()
+    if job in ("all", "sentiment"):
+        _job_sentiment_update()
+
+
+# ============================================================
+# Ticker backfill worker (Phase 2)
+# ============================================================
+_backfill_worker_running = False
+_backfill_lock = False
+
+
+def _run_backfill_worker():
+    global _backfill_lock
+    if _backfill_lock:
+        return
+    _backfill_lock = True
+    try:
+        from app.services.backfill_service import process_pending_backfill_jobs
+        result = process_pending_backfill_jobs(max_jobs_per_run=3)
+        if result.get("processed", 0) > 0:
+            logger.info(f"[backfill] {result.get('message')}")
+    except Exception as e:
+        logger.exception(f"backfill worker 오류: {e}")
+        try:
+            notify_error("backfill_worker", str(e))
+        except Exception:
+            pass
+    finally:
+        _backfill_lock = False
+
+
+def start_backfill_worker_scheduler():
+    global _backfill_worker_running
+    if _backfill_worker_running:
+        return False
+    # 기존 job 제거
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_backfill_worker']:
+        schedule.cancel_job(job)
+    interval = 2
+    try:
+        interval = int(float(_read_cfg("ticker_backfill_interval_min", "2")))
+        interval = max(1, min(interval, 30))
+    except Exception:
+        pass
+    schedule.every(interval).minutes.do(_run_backfill_worker)
+    _backfill_worker_running = True
+    logger.info(f"백필 워커 시작됨 ({interval}분 주기)")
+    return True
+
+
+def stop_backfill_worker_scheduler():
+    global _backfill_worker_running
+    if not _backfill_worker_running:
+        return False
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_backfill_worker']:
+        schedule.cancel_job(job)
+    _backfill_worker_running = False
+    logger.info("백필 워커 중지됨")
+    return True
+
+
+# ============================================================
+# 인트라데이 스케줄러 (Phase 3)
+# ============================================================
+_intraday_running = False
+_intraday_lock = False
+
+
+def _run_intraday_cycle():
+    """인트라데이 평가 1회 실행 (지정 주기마다)."""
+    global _intraday_lock
+    if _intraday_lock:
+        logger.debug("[intraday] 이미 실행 중 — 스킵")
+        return
+    _intraday_lock = True
+    try:
+        from app.services.intraday_service import run_intraday_cycle
+        run_intraday_cycle()
+    except Exception as e:
+        logger.exception(f"intraday cycle 오류: {e}")
+        try:
+            notify_error("intraday_cycle", str(e))
+        except Exception:
+            pass
+    finally:
+        _intraday_lock = False
+
+
+def start_intraday_scheduler():
+    global _intraday_running
+    if _intraday_running:
+        return False
+    # 기존 job 제거
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_intraday_cycle']:
+        schedule.cancel_job(job)
+    interval = 5
+    try:
+        interval = int(float(_read_cfg("intraday_interval_minutes", "5")))
+        interval = max(1, min(interval, 30))
+    except Exception:
+        pass
+    schedule.every(interval).minutes.do(_run_intraday_cycle)
+    _intraday_running = True
+    logger.info(f"인트라데이 스케줄러 시작됨 ({interval}분 주기, 게이트는 intraday_enabled config로 제어)")
+    return True
+
+
+def stop_intraday_scheduler():
+    global _intraday_running
+    if not _intraday_running:
+        return False
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_intraday_cycle']:
+        schedule.cancel_job(job)
+    _intraday_running = False
+    logger.info("인트라데이 스케줄러 중지됨")
+    return True
+
+
+def get_intraday_status() -> dict:
+    return {
+        "scheduler_running": _intraday_running,
+        "lock_held": _intraday_lock,
+    }

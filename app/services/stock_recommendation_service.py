@@ -91,16 +91,17 @@ class StockRecommendationService:
         signal = self.calculate_ema(macd, signal_period)
         return macd, signal
 
-    def _fetch_stock_price_rows(self, start_date: str) -> list[dict]:
+    def _fetch_stock_price_rows(self, start_date: str, tickers: list[str] | None = None) -> list[dict]:
         """Supabase REST 기본 1000 row 제한을 피하기 위해 페이지 단위로 조회."""
         rows = []
         offset = 0
+        ticker_filter = tickers if tickers else self.tickers
 
         while True:
             resp = (
                 supabase.table("stock_daily_prices")
                 .select("date, ticker, close")
-                .in_("ticker", self.tickers)
+                .in_("ticker", ticker_filter)
                 .gte("date", start_date)
                 .order("date")
                 .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
@@ -235,15 +236,26 @@ class StockRecommendationService:
             logger.warning(f"ADX 계산 오류: {e}")
             return None
 
-    def generate_technical_recommendations(self):
-        """기술적 지표를 계산하고 stock_signals 테이블에 저장"""
+    def generate_technical_recommendations(self, tickers: list[str] | None = None):
+        """기술적 지표를 계산하고 stock_signals 테이블에 저장.
+
+        Args:
+            tickers: 특정 종목만 처리하려면 ticker 리스트 전달. None이면 전체 active 종목.
+        """
         self._refresh_universe()
+        if tickers:
+            target_tickers = [t for t in tickers if t in self.tickers]
+            if not target_tickers:
+                return {"message": "처리 대상 종목 없음", "data": []}
+        else:
+            target_tickers = list(self.tickers)
+
         end_date = datetime.now()
         start_date = end_date - timedelta(days=self.lookback_days)
         start_date_str = start_date.strftime("%Y-%m-%d")
 
         # stock_daily_prices (Long format) → Wide format pivot
-        price_rows = self._fetch_stock_price_rows(start_date_str)
+        price_rows = self._fetch_stock_price_rows(start_date_str, tickers=target_tickers)
 
         if not price_rows:
             return {"message": "주가 데이터가 없습니다", "data": []}
@@ -260,7 +272,7 @@ class StockRecommendationService:
 
         signals = []
         skipped_tickers = []
-        for ticker in self.tickers:
+        for ticker in target_tickers:
             if ticker not in df.columns:
                 logger.warning(f"{ticker}: stock_daily_prices에 데이터 없음")
                 skipped_tickers.append({"ticker": ticker, "reason": "no_price_data"})
@@ -433,6 +445,69 @@ class StockRecommendationService:
                 })
 
         return {"message": f"{len(results)}개의 추천 주식을 분석했습니다", "results": results}
+
+    def fetch_and_store_sentiment_for_tickers(self, tickers: list[str]) -> dict:
+        """
+        지정된 ticker 리스트에 대해 AlphaVantage 뉴스 감성 분석을 수행하고
+        ticker_sentiment 테이블에 upsert.
+
+        Returns:
+            {"results": [{"ticker", "sentiment_score", "article_count"} | {"ticker", "message": "관련 기사 없음"}], ...}
+        """
+        if not tickers:
+            return {"message": "분석할 티커가 없습니다", "results": []}
+
+        alpha_key = settings.ALPHA_VANTAGE_API_KEY
+        relevance_threshold = 0.2
+        sleep_interval = 5
+        since = (datetime.now() - timedelta(days=1)).strftime("%Y%m%dT0000")
+
+        results = []
+        for ticker in tickers:
+            try:
+                response_json = request_json("GET", "https://www.alphavantage.co/query", params={
+                    "function": "NEWS_SENTIMENT",
+                    "tickers":  ticker,
+                    "time_from": since,
+                    "limit":    100,
+                    "apikey":   alpha_key,
+                })
+                feed = response_json.get("feed", []) if isinstance(response_json, dict) else []
+                scores = [
+                    float(s["ticker_sentiment_score"])
+                    for article in feed
+                    for s in article.get("ticker_sentiment", [])
+                    if s["ticker"] == ticker and float(s.get("relevance_score", 0)) >= relevance_threshold
+                ]
+
+                if not scores:
+                    # 기사 없음도 명시적으로 기록 (스냅샷 0건)
+                    supabase.table("ticker_sentiment").upsert({
+                        "ticker":          ticker,
+                        "sentiment_score": 0.0,
+                        "article_count":   0,
+                        "updated_at":      datetime.now().isoformat(),
+                    }, on_conflict="ticker").execute()
+                    results.append({"ticker": ticker, "message": "관련 기사 없음", "article_count": 0})
+                else:
+                    avg_score = sum(scores) / len(scores)
+                    supabase.table("ticker_sentiment").upsert({
+                        "ticker":          ticker,
+                        "sentiment_score": avg_score,
+                        "article_count":   len(scores),
+                        "updated_at":      datetime.now().isoformat(),
+                    }, on_conflict="ticker").execute()
+                    results.append({
+                        "ticker":          ticker,
+                        "sentiment_score": avg_score,
+                        "article_count":   len(scores),
+                    })
+            except Exception as e:
+                logger.warning(f"{ticker} 감성 분석 실패: {e}")
+                results.append({"ticker": ticker, "message": f"실패: {e}"})
+            time.sleep(sleep_interval)
+
+        return {"message": f"{len(results)}개 티커 분석 완료", "results": results}
 
     def fetch_and_store_sentiment_for_recommendations(self):
         """

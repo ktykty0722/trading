@@ -313,9 +313,10 @@ async def cmd_add(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         existing = supabase.table("stock_universe").select("ticker, is_active").eq("ticker", ticker).execute().data
         if existing:
             if existing[0]["is_active"]:
-                return await update.message.reply_text(f"⚠️ {ticker} 은 이미 활성 종목입니다.")
-            supabase.table("stock_universe").update({"is_active": True}).eq("ticker", ticker).execute()
-            await update.message.reply_text(f"✅ {ticker} 재활성화 완료")
+                await update.message.reply_text(f"⚠️ {ticker} 은 이미 활성 종목입니다. 백필 재예약을 진행합니다.")
+            else:
+                supabase.table("stock_universe").update({"is_active": True}).eq("ticker", ticker).execute()
+                await update.message.reply_text(f"✅ {ticker} 재활성화 — 백필을 예약합니다.")
         else:
             supabase.table("stock_universe").insert({
                 "ticker": ticker,
@@ -324,9 +325,121 @@ async def cmd_add(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "is_active": True,
                 "is_etf": False,
             }).execute()
-            await update.message.reply_text(f"✅ {ticker} ({exchange}) 추가 완료\n이름은 Supabase에서 직접 수정하세요.")
+
+        # 백필 job 예약
+        from app.services.backfill_service import enqueue_backfill_job
+        result = enqueue_backfill_job(ticker, exchange)
+        if result.get("success"):
+            await update.message.reply_text(
+                f"✅ <b>{ticker} ({exchange}) 추가 완료</b>\n"
+                f"백필 작업을 예약했습니다.\n\n"
+                f"진행:\n"
+                f"- 가격 데이터: pending\n"
+                f"- 기술지표: pending\n"
+                f"- 감성분석: pending\n"
+                f"- ML 예측: 다음 예측 스케줄에 포함\n\n"
+                f"<i>이름은 Supabase에서 직접 수정하세요.</i>",
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(f"⚠️ 종목은 추가됐지만 백필 예약 실패: {result.get('message')}")
     except Exception as e:
         await update.message.reply_text(f"❌ 추가 실패: {e}")
+
+
+# ============================================================
+# /intraday_status, /start_intraday, /stop_intraday, /intraday_today
+# ============================================================
+async def cmd_intraday_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    try:
+        from app.utils.scheduler import get_intraday_status
+        sched = get_intraday_status()
+        cfg = {r["key"]: r["value"] for r in (supabase.table("system_config").select("key, value").like("key", "intraday_%").execute().data or [])}
+        enabled = cfg.get("intraday_enabled", "false").lower() in {"1", "true", "yes", "on"}
+        today = datetime.now().strftime("%Y-%m-%d")
+        try:
+            sig_rows = supabase.table("intraday_signals").select("ticker").gte("timestamp", today).execute().data or []
+        except Exception:
+            sig_rows = []
+        try:
+            orders = supabase.table("trade_records").select("id").eq("strategy", "intraday").gte("buy_date", today).execute().data or []
+        except Exception:
+            orders = []
+
+        text = (
+            f"⚡️ <b>인트라데이 엔진</b>\n\n"
+            f"  엔진: {'🟢 ON' if enabled else '🔴 OFF'}\n"
+            f"  스케줄러: {'🟢' if sched['scheduler_running'] else '🔴'}\n"
+            f"  평가 주기: {cfg.get('intraday_interval_minutes', '5')}분\n"
+            f"  ET 윈도우: {cfg.get('intraday_start_et', '09:45')} ~ {cfg.get('intraday_end_et', '15:30')}\n"
+            f"  최소 점수: {cfg.get('intraday_min_score', '0.7')}\n"
+            f"  오늘 후보 평가: {len(sig_rows)}\n"
+            f"  오늘 주문: {len(orders)}\n"
+            f"  LLM 검토: {cfg.get('intraday_use_llm_review', 'false')}\n"
+        )
+        await update.message.reply_text(text, parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 조회 실패: {e}")
+
+
+async def cmd_start_intraday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    try:
+        supabase.table("system_config").upsert({
+            "key": "intraday_enabled",
+            "value": "true",
+            "description": "인트라데이 매수 엔진 활성화 여부",
+        }, on_conflict="key").execute()
+        await update.message.reply_text("✅ 인트라데이 엔진 ON (intraday_enabled=true)")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 설정 실패: {e}")
+
+
+async def cmd_stop_intraday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    try:
+        supabase.table("system_config").upsert({
+            "key": "intraday_enabled",
+            "value": "false",
+            "description": "인트라데이 매수 엔진 활성화 여부",
+        }, on_conflict="key").execute()
+        await update.message.reply_text("⏸ 인트라데이 엔진 OFF (intraday_enabled=false)")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 설정 실패: {e}")
+
+
+async def cmd_intraday_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        rows = (
+            supabase.table("intraday_signals")
+            .select("ticker, timestamp, price, signal_score, reason")
+            .gte("timestamp", today)
+            .order("signal_score", desc=True)
+            .limit(20)
+            .execute()
+            .data
+            or []
+        )
+        if not rows:
+            return await update.message.reply_text(f"📭 {today} 인트라데이 평가 없음")
+        lines = [f"⚡️ <b>오늘 인트라데이 평가</b> ({today})\n"]
+        for r in rows:
+            score = float(r.get("signal_score") or 0)
+            ts = (r.get("timestamp") or "")[11:16]
+            lines.append(
+                f"  <b>{r['ticker']}</b> [{ts}] ${float(r.get('price') or 0):.2f} "
+                f"score={score:.2f}\n  {('이유: ' + (r.get('reason') or ''))[:120]}\n"
+            )
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 조회 실패: {e}")
 
 
 async def cmd_remove(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -367,6 +480,10 @@ def _build_app() -> Application:
     app.add_handler(CommandHandler("tickers",    cmd_tickers))
     app.add_handler(CommandHandler("add",        cmd_add))
     app.add_handler(CommandHandler("remove",     cmd_remove))
+    app.add_handler(CommandHandler("intraday_status", cmd_intraday_status))
+    app.add_handler(CommandHandler("start_intraday", cmd_start_intraday))
+    app.add_handler(CommandHandler("stop_intraday",  cmd_stop_intraday))
+    app.add_handler(CommandHandler("intraday_today", cmd_intraday_today))
 
     return app
 
@@ -396,8 +513,12 @@ async def _set_commands(app: Application):
         BotCommand("buy_now",    "즉시 매수"),
         BotCommand("sell_now",   "즉시 매도"),
         BotCommand("tickers",    "활성 종목 목록"),
-        BotCommand("add",        "종목 추가"),
+        BotCommand("add",        "종목 추가 + 백필 예약"),
         BotCommand("remove",     "종목 비활성화"),
+        BotCommand("intraday_status", "인트라데이 엔진 상태"),
+        BotCommand("start_intraday", "인트라데이 엔진 ON"),
+        BotCommand("stop_intraday",  "인트라데이 엔진 OFF"),
+        BotCommand("intraday_today", "오늘 인트라데이 평가"),
     ])
 
 

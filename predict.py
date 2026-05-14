@@ -336,4 +336,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # CLI entrypoint — service 모듈을 통해 실행 (scheduler와 동일 경로)
+    try:
+        from app.services.ml_prediction_service import run_ml_prediction
+        result = run_ml_prediction()
+        if not result.get("success"):
+            logger.error(result.get("message"))
+            sys.exit(1)
+        logger.info(result.get("message"))
+    except ImportError:
+        # app 패키지 import 실패 시 기존 main() 폴백
+        main()

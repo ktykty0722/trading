@@ -16,6 +16,9 @@ from app.utils.scheduler import (
     start_economic_data_scheduler, stop_economic_data_scheduler,
     start_daily_report_scheduler,
     start_mlops_scheduler, stop_mlops_scheduler,
+    start_data_pipeline_scheduler, stop_data_pipeline_scheduler,
+    start_backfill_worker_scheduler, stop_backfill_worker_scheduler,
+    start_intraday_scheduler, stop_intraday_scheduler,
 )
 from app.telegram_bot.bot import start_bot, stop_bot
 
@@ -33,6 +36,9 @@ async def lifespan(app: FastAPI):
     stop_sell_scheduler()
     stop_economic_data_scheduler()
     stop_mlops_scheduler()
+    stop_data_pipeline_scheduler()
+    stop_backfill_worker_scheduler()
+    stop_intraday_scheduler()
     stop_bot()
 
 
@@ -104,6 +110,9 @@ async def _startup():
     start_economic_data_scheduler()
     start_daily_report_scheduler()
     start_mlops_scheduler()
+    start_data_pipeline_scheduler()
+    start_backfill_worker_scheduler()
+    start_intraday_scheduler()
     start_bot()
 
 
