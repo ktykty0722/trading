@@ -111,6 +111,92 @@ def notify_error(context: str, error: str):
     notify(text)
 
 
+def notify_pipeline_failure(job_name: str, error: str):
+    """데이터 파이프라인 job 실패 알림"""
+    text = (
+        f"🔴 <b>데이터 파이프라인 실패</b>\n\n"
+        f"  Job: <code>{job_name}</code>\n"
+        f"  오류: <code>{error[:300]}</code>"
+    )
+    notify(text)
+
+
+def notify_pipeline_success(job_name: str, summary: str):
+    """데이터 파이프라인 job 성공 알림 (간략)"""
+    text = (
+        f"✅ <b>파이프라인 완료</b>\n"
+        f"  Job: <code>{job_name}</code>\n"
+        f"  결과: {summary[:300]}"
+    )
+    notify(text)
+
+
+def notify_backfill_queued(ticker: str, exchange: str):
+    """/add 직후 백필 예약 안내"""
+    text = (
+        f"✅ <b>{ticker} ({exchange}) 추가 완료</b>\n"
+        f"백필 작업을 예약했습니다.\n\n"
+        f"진행:\n"
+        f"- 가격 데이터: pending\n"
+        f"- 기술지표: pending\n"
+        f"- 감성분석: pending\n"
+        f"- ML 예측: 다음 예측 스케줄에 포함"
+    )
+    notify(text)
+
+
+def notify_backfill_done(ticker: str, results: dict):
+    """백필 완료 결과 알림"""
+    prices_n = results.get("prices", 0)
+    signals_ok = results.get("signals", False)
+    sentiment = results.get("sentiment") or {}
+    sent_msg = sentiment.get("message", "")
+    sent_score = sentiment.get("sentiment_score")
+    art_count = sentiment.get("article_count")
+
+    if sent_score is not None and art_count:
+        sentiment_line = f"기사 {art_count}건, score {float(sent_score):.2f}"
+    elif art_count == 0:
+        sentiment_line = "관련 기사 없음"
+    else:
+        sentiment_line = sent_msg or "n/a"
+
+    ml_line = "즉시 학습 실행" if results.get("ml_after_add") else "다음 ML job에서 생성 예정"
+
+    text = (
+        f"✅ <b>{ticker} 백필 완료</b>\n"
+        f"- 가격 데이터: {prices_n}건\n"
+        f"- 기술지표: {'생성 완료' if signals_ok else '실패/부족'}\n"
+        f"- 감성분석: {sentiment_line}\n"
+        f"- ML 예측: {ml_line}"
+    )
+    notify(text)
+
+
+def notify_backfill_failed(ticker: str, step: str, reason: str):
+    """백필 실패 알림"""
+    text = (
+        f"❌ <b>{ticker} 백필 실패</b>\n"
+        f"단계: <code>{step}</code>\n"
+        f"이유: <code>{reason[:300]}</code>"
+    )
+    notify(text)
+
+
+def notify_intraday_order(ticker: str, name: str, price: float, quantity: int,
+                          exchange: str, score: float, reason: str):
+    """인트라데이 매수 주문 접수 알림"""
+    text = (
+        f"⚡️ <b>인트라데이 매수 접수</b>\n\n"
+        f"  종목: <b>{name} ({ticker})</b>\n"
+        f"  거래소: {exchange}\n"
+        f"  가격: <b>${price:.2f}</b> × {quantity}주\n"
+        f"  점수: {score:.2f}\n"
+        f"  사유: {reason[:200]}"
+    )
+    notify(text)
+
+
 def notify_daily_report(date: str, total_holdings: int, daily_pnl: Optional[float],
                         total_pnl: Optional[float]):
     daily_str = f"{'+' if daily_pnl >= 0 else ''}{daily_pnl:.2f}%" if daily_pnl is not None else "N/A"
