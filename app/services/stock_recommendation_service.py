@@ -921,8 +921,44 @@ class StockRecommendationService:
                 sell_reasons           = []
                 technical_sell_signals = 0
 
-                # 조건 1: ATR 기반 동적 익절/손절
+                # 조건 1-0: Trailing stop (옵션, 기본 OFF)
+                # ATR 익절/손절 도달 전이라도 peak 대비 하락 시 청산
                 trade_record = trade_records_map.get(ticker)
+                trailing_enabled = False
+                trailing_arm_pct = 3.0
+                trailing_pct = 1.5
+                try:
+                    cfg = supabase.table("system_config").select("key, value").in_(
+                        "key", ["swing_trailing_enabled", "swing_trailing_arm_pct", "swing_trailing_pct"]
+                    ).execute().data or []
+                    cfg_map = {c["key"]: c["value"] for c in cfg}
+                    trailing_enabled = str(cfg_map.get("swing_trailing_enabled", "false")).strip().lower() in {"1", "true", "yes", "on"}
+                    trailing_arm_pct = float(cfg_map.get("swing_trailing_arm_pct", trailing_arm_pct))
+                    trailing_pct = float(cfg_map.get("swing_trailing_pct", trailing_pct))
+                except Exception:
+                    pass
+
+                if trailing_enabled and trade_record and price_change_percent >= trailing_arm_pct:
+                    peak = float(trade_record.get("peak_price") or 0)
+                    # peak이 비어있으면 매수가/현재가 중 큰 값으로 초기화 (다음 사이클에 반영)
+                    if peak <= 0:
+                        peak = max(purchase_price, current_price)
+                    if current_price > peak:
+                        # 더 높은 고점 — peak 갱신 (sell 안 함)
+                        try:
+                            supabase.table("trade_records").update({"peak_price": current_price}).eq("id", trade_record["id"]).execute()
+                            trade_record["peak_price"] = current_price
+                        except Exception:
+                            pass
+                    else:
+                        drop_from_peak = (peak - current_price) / peak * 100.0 if peak > 0 else 0.0
+                        if drop_from_peak >= trailing_pct:
+                            sell_reasons.append(
+                                f"Trailing 청산: peak ${peak:.2f} → 현재 ${current_price:.2f} "
+                                f"(-{drop_from_peak:.2f}% from peak, pnl={price_change_percent:+.2f}%)"
+                            )
+
+                # 조건 1: ATR 기반 동적 익절/손절
                 if trade_record and trade_record.get("take_profit_price") and trade_record.get("stop_loss_price"):
                     tp_price = float(trade_record["take_profit_price"])
                     sl_price = float(trade_record["stop_loss_price"])

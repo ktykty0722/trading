@@ -455,6 +455,27 @@ async def cmd_intraday_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ 청산 실패: {e}")
 
 
+async def cmd_backtest_intraday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    args = ctx.args
+    days = 5
+    if args:
+        try:
+            days = int(args[0])
+            days = max(1, min(days, 60))
+        except Exception:
+            return await update.message.reply_text("사용법: /backtest_intraday [days]\n예) /backtest_intraday 7")
+    await update.message.reply_text(f"⏳ 인트라데이 백테스트 실행 중 (최근 {days}일)...")
+    try:
+        from app.services.intraday_backtest_service import run_intraday_backtest, format_backtest_summary
+        result = run_intraday_backtest(days=days, save_to_db=True)
+        text = format_backtest_summary(result)
+        await update.message.reply_text(text, parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 백테스트 실패: {e}")
+
+
 async def cmd_intraday_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         return await _deny(update)
@@ -529,6 +550,7 @@ def _build_app() -> Application:
     app.add_handler(CommandHandler("intraday_today", cmd_intraday_today))
     app.add_handler(CommandHandler("intraday_positions", cmd_intraday_positions))
     app.add_handler(CommandHandler("intraday_close",     cmd_intraday_close))
+    app.add_handler(CommandHandler("backtest_intraday",  cmd_backtest_intraday))
 
     return app
 
@@ -566,6 +588,7 @@ async def _set_commands(app: Application):
         BotCommand("intraday_today", "오늘 인트라데이 평가"),
         BotCommand("intraday_positions", "인트라데이 포지션 + PnL"),
         BotCommand("intraday_close",     "인트라데이 종목 수동 청산"),
+        BotCommand("backtest_intraday",  "인트라데이 백테스트 (옵션: days)"),
     ])
 
 
