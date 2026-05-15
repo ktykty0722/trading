@@ -286,11 +286,27 @@ class StockScheduler:
                 elif status == "holding":
                     # 보유 수량 동기화 (부분 체결 추가분 반영)
                     prev_qty = record.get("holding_quantity") or 0
+                    update_payload = {}
                     if kis_qty > 0 and kis_qty != prev_qty:
-                        supabase.table("trade_records").update({
-                            "holding_quantity": kis_qty,
-                        }).eq("id", record_id).execute()
-                        logger.info(f"  {ticker} 보유수량 동기화: {prev_qty}주 → {kis_qty}주")
+                        update_payload["holding_quantity"] = kis_qty
+
+                    # peak_price 추적: KIS 현재가가 기존 peak보다 높으면 갱신
+                    try:
+                        item = kis_holdings.get(ticker, {}).get("item", {})
+                        now_price_str = item.get("now_pric2") or "0"
+                        now_price = float(now_price_str) if now_price_str and str(now_price_str).strip() not in ("", ".") else 0.0
+                        prev_peak = float(record.get("peak_price") or 0)
+                        buy_price = float(record.get("buy_price") or 0)
+                        new_peak = max(prev_peak, now_price, buy_price)
+                        if new_peak > 0 and new_peak > prev_peak:
+                            update_payload["peak_price"] = new_peak
+                    except Exception:
+                        pass
+
+                    if update_payload:
+                        supabase.table("trade_records").update(update_payload).eq("id", record_id).execute()
+                        if "holding_quantity" in update_payload:
+                            logger.info(f"  {ticker} 보유수량 동기화: {prev_qty}주 → {kis_qty}주")
 
                 elif status == "sell_ordered":
                     if kis_qty == 0:
@@ -932,19 +948,96 @@ def _send_daily_report():
     try:
         today = datetime.now(pytz.timezone(settings.MARKET_TIMEZONE)).strftime("%Y-%m-%d")
         trades = supabase.table("trade_records").select(
-            "status, profit_loss, profit_loss_pct"
+            "status, profit_loss, profit_loss_pct, strategy, exit_strategy, sell_reason, ticker, stock_name"
         ).gte("created_at", today).execute().data or []
 
-        holdings   = sum(1 for t in trades if t["status"] in ("holding", "buy_ordered"))
+        holdings = sum(1 for t in trades if t["status"] in ("holding", "buy_ordered"))
         sold_today = [t for t in trades if t["status"] == "sold" and t.get("profit_loss_pct") is not None]
-        daily_pnl  = sum(t["profit_loss_pct"] for t in sold_today) / len(sold_today) if sold_today else None
+        daily_pnl = sum(t["profit_loss_pct"] for t in sold_today) / len(sold_today) if sold_today else None
 
         all_sold = supabase.table("trade_records").select("profit_loss").eq(
             "status", "sold"
         ).execute().data or []
         total_pnl = sum(t["profit_loss"] for t in all_sold if t.get("profit_loss")) or None
 
+        # 기본 리포트 발송
         notify_daily_report(today, holdings, daily_pnl, total_pnl)
+
+        # ── 확장 리포트: 전략/청산사유별 분포 ─────────────
+        try:
+            swing = [t for t in sold_today if (t.get("strategy") or "swing") == "swing"]
+            intraday = [t for t in sold_today if t.get("strategy") == "intraday"]
+
+            def _avg(lst):
+                return (sum(x["profit_loss_pct"] for x in lst) / len(lst)) if lst else None
+
+            def _win_rate(lst):
+                if not lst:
+                    return None
+                wins = sum(1 for x in lst if (x.get("profit_loss_pct") or 0) > 0)
+                return wins / len(lst) * 100.0
+
+            def _pnl_sum(lst):
+                return sum((x.get("profit_loss") or 0) for x in lst)
+
+            # exit_strategy별 그룹핑 (intraday 전용)
+            exit_groups: dict[str, list[dict]] = {}
+            for t in intraday:
+                key = t.get("exit_strategy") or "n/a"
+                exit_groups.setdefault(key, []).append(t)
+
+            lines = [f"📊 <b>일일 리포트 상세</b> ({today})\n"]
+
+            # 스윙 요약
+            swing_avg = _avg(swing)
+            swing_wr = _win_rate(swing)
+            lines.append(
+                f"<b>스윙</b>: 청산 {len(swing)}건"
+                + (f", 평균 {swing_avg:+.2f}%" if swing_avg is not None else "")
+                + (f", 승률 {swing_wr:.0f}%" if swing_wr is not None else "")
+                + (f", 합산 ${_pnl_sum(swing):+,.2f}" if swing else "")
+            )
+
+            # 인트라데이 요약
+            id_avg = _avg(intraday)
+            id_wr = _win_rate(intraday)
+            lines.append(
+                f"<b>인트라데이</b>: 청산 {len(intraday)}건"
+                + (f", 평균 {id_avg:+.2f}%" if id_avg is not None else "")
+                + (f", 승률 {id_wr:.0f}%" if id_wr is not None else "")
+                + (f", 합산 ${_pnl_sum(intraday):+,.2f}" if intraday else "")
+            )
+
+            # 인트라데이 exit_strategy 분포
+            if exit_groups:
+                lines.append("\n<b>인트라데이 청산 사유별</b>")
+                for k, v in sorted(exit_groups.items(), key=lambda kv: -len(kv[1])):
+                    avg = _avg(v)
+                    wr = _win_rate(v)
+                    lines.append(
+                        f"  • <code>{k}</code> ×{len(v)}"
+                        + (f", 평균 {avg:+.2f}%" if avg is not None else "")
+                        + (f", 승률 {wr:.0f}%" if wr is not None else "")
+                    )
+
+            # Top winners / losers
+            if sold_today:
+                top = sorted(sold_today, key=lambda t: (t.get("profit_loss_pct") or 0), reverse=True)[:3]
+                bot = sorted(sold_today, key=lambda t: (t.get("profit_loss_pct") or 0))[:3]
+                if top:
+                    lines.append("\n<b>오늘 Top 3</b>")
+                    for t in top:
+                        lines.append(f"  🟢 {t.get('stock_name') or t.get('ticker')}: {t.get('profit_loss_pct'):+.2f}%")
+                if bot and bot[0].get("profit_loss_pct", 0) < 0:
+                    lines.append("\n<b>오늘 Worst 3</b>")
+                    for t in bot:
+                        if (t.get("profit_loss_pct") or 0) >= 0:
+                            continue
+                        lines.append(f"  🔴 {t.get('stock_name') or t.get('ticker')}: {t.get('profit_loss_pct'):+.2f}%")
+
+            notify("\n".join(lines))
+        except Exception as e:
+            logger.warning(f"일일 리포트 상세 발송 실패: {e}")
     except Exception as e:
         logger.error(f"일일 리포트 발송 실패: {e}")
 
