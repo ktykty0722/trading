@@ -57,25 +57,115 @@ def _load_intraday_prices(start: datetime, end: datetime) -> pd.DataFrame:
     return df
 
 
-def _load_prev_close_map() -> dict[str, float]:
-    """모든 활성 티커의 최신 전일 종가 매핑."""
+def _load_daily_closes(start: datetime, end: datetime) -> dict[str, list[tuple]]:
+    """
+    각 ticker별 (trading_date, close) 시계열을 반환한다.
+    백테스트 timestamp별로 '그 ET 날짜보다 이전의 가장 최근 종가'를 찾을 수 있도록 함.
+    Look-ahead bias 방지: 단일 latest close가 아닌 시계열 전체를 사용.
+    """
+    # 백테스트 시작일 기준 충분한 이전 데이터까지 로드 (영업일 공백 대비 30일 버퍼)
+    from datetime import date as _date  # local import for typing only
+    buffer_start = (start - timedelta(days=30)).date().isoformat()
+    end_date = end.date().isoformat()
+    rows: list[dict] = []
+    offset = 0
+    page = 1000
     try:
-        rows = (
-            supabase.table("stock_daily_prices")
-            .select("ticker, date, close")
-            .order("date", desc=True)
-            .limit(5000)
-            .execute()
-            .data or []
-        )
-        m: dict[str, float] = {}
-        for r in rows:
-            t = r["ticker"]
-            if t not in m and r.get("close"):
-                m[t] = float(r["close"])
-        return m
+        while True:
+            resp = (
+                supabase.table("stock_daily_prices")
+                .select("ticker, date, close")
+                .gte("date", buffer_start)
+                .lte("date", end_date)
+                .order("date", desc=False)
+                .range(offset, offset + page - 1)
+                .execute()
+            )
+            chunk = resp.data or []
+            rows.extend(chunk)
+            if len(chunk) < page:
+                break
+            offset += page
     except Exception:
         return {}
+
+    m: dict[str, list[tuple]] = {}
+    for r in rows:
+        if not r.get("close"):
+            continue
+        try:
+            d = datetime.fromisoformat(r["date"]).date() if isinstance(r["date"], str) else r["date"]
+        except Exception:
+            continue
+        m.setdefault(r["ticker"], []).append((d, float(r["close"])))
+    # 이미 asc 정렬되어 들어옴
+    return m
+
+
+def _prev_close_at(closes_map: dict[str, list[tuple]], ticker: str, ts_et: datetime):
+    """ts_et의 ET 날짜보다 strictly 이전의 가장 최근 종가."""
+    arr = closes_map.get(ticker)
+    if not arr:
+        return None
+    target = ts_et.date()
+    result = None
+    for d, c in arr:
+        if d < target:
+            result = c
+        else:
+            break
+    return result
+
+
+def _load_rsi_map(start: datetime, end: datetime) -> dict[str, list[tuple]]:
+    """ticker별 (signal_date, rsi) 시계열. live의 _today_rsi 동등 효과를 시점-안전하게 재현."""
+    buffer_start = (start - timedelta(days=30)).date().isoformat()
+    end_date = end.date().isoformat()
+    rows: list[dict] = []
+    offset = 0
+    page = 1000
+    try:
+        while True:
+            resp = (
+                supabase.table("stock_signals")
+                .select("ticker, date, rsi")
+                .gte("date", buffer_start)
+                .lte("date", end_date)
+                .order("date", desc=False)
+                .range(offset, offset + page - 1)
+                .execute()
+            )
+            chunk = resp.data or []
+            rows.extend(chunk)
+            if len(chunk) < page:
+                break
+            offset += page
+    except Exception:
+        return {}
+    m: dict[str, list[tuple]] = {}
+    for r in rows:
+        if r.get("rsi") is None:
+            continue
+        try:
+            d = datetime.fromisoformat(r["date"]).date() if isinstance(r["date"], str) else r["date"]
+            m.setdefault(r["ticker"], []).append((d, float(r["rsi"])))
+        except Exception:
+            continue
+    return m
+
+
+def _rsi_at(rsi_map: dict[str, list[tuple]], ticker: str, ts_et: datetime):
+    arr = rsi_map.get(ticker)
+    if not arr:
+        return None
+    target = ts_et.date()
+    result = None
+    for d, v in arr:
+        if d <= target:
+            result = v
+        else:
+            break
+    return result
 
 
 def _load_universe() -> dict[str, dict]:
@@ -266,11 +356,19 @@ def run_intraday_backtest(
         return {"summary": {"trades": 0, "message": "intraday_prices 데이터 없음 — 백테스트 불가"}, "trades": [], "run_id": ""}
 
     universe = _load_universe()
-    prev_close_map = _load_prev_close_map()
+    # 시점-안전 prev_close: 각 ts의 ET 날짜보다 strictly 이전 종가만 사용 (look-ahead 차단)
+    closes_map = _load_daily_closes(start_dt, end_dt)
+    # 시점-안전 RSI: 그날 또는 그 전의 마지막 stock_signals.rsi 사용
+    rsi_map = _load_rsi_map(start_dt, end_dt)
 
-    # SPY/QQQ market_chg per timestamp (전일종가 대비)
+    # SPY/QQQ market_chg per timestamp (전일종가 대비, 시점-안전)
     market_tickers = {"SPY", "QQQ"}
     market_df = df[df["ticker"].isin(market_tickers)].copy()
+
+    # 라이브 _recent_snapshots와 동일하게 최근 60분 rolling window 사용
+    SIGNAL_WINDOW_MINUTES = 60
+    # 라이브 _today_rsi 가드와 동일: rsi > 75면 진입 거부
+    RSI_HARD_CAP = 75.0
 
     # 시뮬: timestamp 오름차순으로 처리
     df = df.sort_values("timestamp")
@@ -281,7 +379,7 @@ def run_intraday_backtest(
     daily_entry_count: dict[str, int] = {}   # YYYY-MM-DD(ET) → n
     trades: list[dict] = []
 
-    def _market_chg_at(ts: datetime) -> Optional[float]:
+    def _market_chg_at(ts: datetime, ts_et: datetime) -> Optional[float]:
         sub = market_df[market_df["timestamp"] <= ts]
         if sub.empty:
             return None
@@ -291,7 +389,7 @@ def run_intraday_backtest(
             if tsub.empty:
                 continue
             latest = float(tsub.iloc[-1]["price"])
-            prev = prev_close_map.get(t)
+            prev = _prev_close_at(closes_map, t, ts_et)
             if prev and prev > 0:
                 chg_list.append((latest - prev) / prev * 100.0)
         return min(chg_list) if chg_list else None
@@ -302,10 +400,11 @@ def run_intraday_backtest(
             continue
         day_key = ts_et.strftime("%Y-%m-%d")
 
-        # 현재 timestamp 직전까지의 누적 데이터
-        history = df[df["timestamp"] <= ts]
-        snapshot = history[history["timestamp"] == ts]
-        market_chg = _market_chg_at(ts)
+        # 라이브와 동일하게 최근 60분 윈도우만 사용 (look-ahead/장기집계 차단)
+        window_start = ts - timedelta(minutes=SIGNAL_WINDOW_MINUTES)
+        history = df[(df["timestamp"] >= window_start) & (df["timestamp"] <= ts)]
+        snapshot = df[df["timestamp"] == ts]
+        market_chg = _market_chg_at(ts, ts_et)
 
         # ---- 청산 평가 (먼저) ----
         for ticker in list(open_positions.keys()):
@@ -361,8 +460,12 @@ def run_intraday_backtest(
                     continue
 
                 ticker_history = history[history["ticker"] == ticker]
-                prev_close = prev_close_map.get(ticker)
+                prev_close = _prev_close_at(closes_map, ticker, ts_et)
                 if not prev_close:
+                    continue
+                # 라이브 _today_rsi 가드 (rsi > 75면 진입 거부) — 시점-안전 lookup
+                rsi_v = _rsi_at(rsi_map, ticker, ts_et)
+                if rsi_v is not None and rsi_v > RSI_HARD_CAP:
                     continue
                 sig = _compute_signal_from_history(ticker_history, ticker, prev_close, ts, market_chg)
                 ok, _why = _entry_filter(sig, params)
