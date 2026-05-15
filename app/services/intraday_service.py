@@ -44,7 +44,9 @@ from app.services.risk_service import (
     check_vix_halt_gate, get_mdd_risk_state, calculate_position_size,
 )
 from app.services.stock_recommendation_service import EXCHANGE_TO_API
-from app.telegram_bot.notifier import notify_intraday_order, notify_error
+from app.telegram_bot.notifier import (
+    notify_intraday_order, notify_intraday_exit, notify_error,
+)
 
 logger = logging.getLogger("intraday")
 
@@ -619,7 +621,325 @@ def run_intraday_cycle() -> dict:
     }
 
 
+# ============================================================
+# 인트라데이 청산 (TP / SL / Trailing / Time / EOD / Panic)
+# ============================================================
+def _is_eod_time(now_et: datetime) -> bool:
+    eh, em = _parse_hhmm(_cfg("intraday_eod_exit_et", "15:45"), 15, 45)
+    return now_et.hour * 60 + now_et.minute >= eh * 60 + em
+
+
+def _fetch_intraday_holdings() -> list[dict]:
+    """매도 대상이 될 수 있는 인트라데이 포지션 (holding 또는 buy_ordered)."""
+    try:
+        rows = (
+            supabase.table("trade_records")
+            .select("*")
+            .eq("strategy", "intraday")
+            .in_("status", ["holding", "buy_ordered"])
+            .execute()
+            .data or []
+        )
+        return rows
+    except Exception as e:
+        logger.error(f"[intraday_exit] trade_records 조회 실패: {e}")
+        return []
+
+
+def _holding_minutes(record: dict, now_utc: datetime) -> float:
+    try:
+        buy = record.get("buy_date")
+        if not buy:
+            return 0.0
+        # buy_date는 'YYYY-MM-DD HH:MM:SS' (ET) 또는 ISO 형식
+        try:
+            dt = datetime.fromisoformat(str(buy).replace(" ", "T").replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = pytz.timezone(settings.MARKET_TIMEZONE).localize(dt)
+        except Exception:
+            return 0.0
+        delta = now_utc - dt.astimezone(pytz.UTC)
+        return delta.total_seconds() / 60.0
+    except Exception:
+        return 0.0
+
+
+def _update_peak_price(record_id: int, new_peak: float) -> None:
+    try:
+        supabase.table("trade_records").update({"peak_price": new_peak}).eq("id", record_id).execute()
+    except Exception as e:
+        logger.warning(f"[intraday_exit] peak_price 업데이트 실패 id={record_id}: {e}")
+
+
+def _decide_exit(record: dict, current_price: float, now_et: datetime, market_chg: Optional[float]) -> Optional[tuple[str, str]]:
+    """
+    청산 판단. (exit_strategy, reason) 또는 None.
+    우선순위: EOD > Panic > Stop > Trailing > Take > Time
+    """
+    buy_price = float(record.get("buy_price") or 0)
+    if buy_price <= 0 or current_price <= 0:
+        return None
+    pnl_pct = (current_price - buy_price) / buy_price * 100.0
+
+    # 1) EOD 강제 청산
+    if _is_eod_time(now_et):
+        return ("intraday_eod", f"EOD 강제 청산 (pnl={pnl_pct:+.2f}%)")
+
+    # 2) 시장 패닉
+    panic_th = _cfg_f("intraday_exit_panic_pct", -1.5)
+    if market_chg is not None and market_chg <= panic_th:
+        return ("intraday_panic", f"SPY/QQQ {market_chg:+.2f}% <= {panic_th}% (pnl={pnl_pct:+.2f}%)")
+
+    # 3) Hard stop
+    stop_pct = _cfg_f("intraday_stop_pct", 0.7)
+    if pnl_pct <= -abs(stop_pct):
+        return ("intraday_stop", f"손절 {pnl_pct:+.2f}% <= -{stop_pct}%")
+
+    # 4) Trailing stop (arm_pct 이상 수익 한 번이라도 났을 때)
+    peak = float(record.get("peak_price") or 0)
+    arm_pct = _cfg_f("intraday_trailing_arm_pct", 0.6)
+    trail_pct = _cfg_f("intraday_trailing_pct", 0.5)
+    if peak > 0 and buy_price > 0:
+        peak_pnl = (peak - buy_price) / buy_price * 100.0
+        if peak_pnl >= arm_pct:
+            drop_from_peak = (peak - current_price) / peak * 100.0
+            if drop_from_peak >= trail_pct:
+                return ("intraday_trail",
+                        f"Trailing 청산 peak=${peak:.2f}, 현재=${current_price:.2f} (-{drop_from_peak:.2f}% from peak, pnl={pnl_pct:+.2f}%)")
+
+    # 5) Take profit
+    take_pct = _cfg_f("intraday_take_pct", 1.2)
+    if pnl_pct >= take_pct:
+        return ("intraday_take", f"익절 {pnl_pct:+.2f}% >= {take_pct}%")
+
+    # 6) Time stop
+    max_hold = _cfg_i("intraday_max_hold_minutes", 90)
+    held_min = _holding_minutes(record, datetime.now(pytz.UTC))
+    if held_min >= max_hold and pnl_pct < arm_pct:
+        return ("intraday_time",
+                f"시간 청산 {int(held_min)}분 >= {max_hold}분 (pnl={pnl_pct:+.2f}% < arm {arm_pct}%)")
+
+    return None
+
+
+def _execute_intraday_sell(record: dict, current_price: float, exit_strategy: str, reason: str) -> bool:
+    ticker = record["ticker"]
+    name = record.get("stock_name") or ticker
+    exchange = record.get("exchange_code") or "NASD"
+    qty = int(record.get("holding_quantity") or record.get("quantity") or 0)
+    if qty <= 0:
+        # 아직 매수 미체결이면 청산 불가
+        return False
+
+    # 현재가 지정가 주문 (KIS 해외 모의/실전 공통)
+    order_data = {
+        "CANO": settings.KIS_CANO,
+        "ACNT_PRDT_CD": settings.KIS_ACNT_PRDT_CD,
+        "OVRS_EXCG_CD": exchange,
+        "PDNO": ticker,
+        "ORD_DVSN": "00",
+        "ORD_QTY": str(qty),
+        "OVRS_ORD_UNPR": str(current_price),
+        "is_buy": False,
+    }
+    order_result = order_overseas_stock(order_data)
+    if order_result.get("rt_cd") != "0":
+        logger.error(f"[intraday_exit] {ticker} 매도 주문 실패: {order_result.get('msg1')}")
+        return False
+
+    buy_price = float(record.get("buy_price") or 0)
+    pnl_pct = ((current_price - buy_price) / buy_price * 100.0) if buy_price > 0 else 0.0
+    pnl = (current_price - buy_price) * qty if buy_price > 0 else 0.0
+
+    try:
+        supabase.table("trade_records").update({
+            "status": "sell_ordered",
+            "sell_price": current_price,
+            "sell_date": datetime.now(pytz.timezone(settings.MARKET_TIMEZONE)).isoformat(),
+            "sell_reason": exit_strategy,
+            "exit_strategy": exit_strategy,
+            "exit_signal_snapshot": {
+                "exit_price": current_price,
+                "exit_reason": reason,
+                "exit_pnl_pct": round(pnl_pct, 4),
+                "peak_price": record.get("peak_price"),
+            },
+            "profit_loss": round(pnl, 2),
+            "profit_loss_pct": round(pnl_pct, 2),
+        }).eq("id", record["id"]).execute()
+    except Exception as e:
+        logger.error(f"[intraday_exit] {ticker} trade_records 업데이트 실패: {e}")
+
+    try:
+        notify_intraday_exit(ticker, name, buy_price, current_price, qty,
+                             exit_strategy, reason, pnl, pnl_pct)
+    except Exception:
+        pass
+    logger.info(f"[intraday_exit] {ticker} {exit_strategy} {qty}주 @ ${current_price} pnl={pnl_pct:+.2f}%")
+    return True
+
+
+def run_intraday_exit_cycle() -> dict:
+    """
+    인트라데이 보유 청산 사이클 (1분 주기).
+    intraday_enabled=true AND intraday_exit_enabled=true일 때만 동작.
+    """
+    if not _cfg_b("intraday_enabled", False):
+        return {"executed": False, "reason": "intraday_enabled=false"}
+    if not _cfg_b("intraday_exit_enabled", True):
+        return {"executed": False, "reason": "intraday_exit_enabled=false"}
+
+    market_tz = pytz.timezone(settings.MARKET_TIMEZONE)
+    now_et = datetime.now(market_tz)
+    if now_et.weekday() > 4:
+        return {"executed": False, "reason": "weekend"}
+
+    # 미국 장 시간(9:30~16:00 ET)만 처리 — EOD는 15:45 ET에 강제 트리거
+    in_market = (
+        (now_et.hour == 9 and now_et.minute >= 30)
+        or (10 <= now_et.hour < 16)
+        or (now_et.hour == 16 and now_et.minute == 0)
+    )
+    if not in_market:
+        return {"executed": False, "reason": "out of market hours"}
+
+    records = _fetch_intraday_holdings()
+    if not records:
+        return {"executed": False, "reason": "no intraday positions"}
+
+    market_chg = _spy_qqq_change_pct()
+    closed = 0
+    skipped = 0
+
+    for record in records:
+        ticker = record["ticker"]
+        # buy_ordered 상태이고 보유 0이면 아직 체결 전 — 청산 skip
+        if record.get("status") == "buy_ordered" and int(record.get("holding_quantity") or 0) == 0:
+            # EOD 시각이고 buy_ordered면 KIS Day order가 자동 취소될 것 (별도 처리 불필요)
+            skipped += 1
+            continue
+
+        exchange = record.get("exchange_code") or "NASD"
+        excd = EXCHANGE_TO_API.get(exchange, "NAS")
+        try:
+            price_result = get_current_price({"AUTH": "", "EXCD": excd, "SYMB": ticker})
+            time.sleep(0.7)
+            if price_result.get("rt_cd") != "0":
+                continue
+            last = price_result.get("output", {}).get("last", "0")
+            current_price = float(last) if last and str(last).strip() not in ("", ".") else 0.0
+            if current_price <= 0:
+                continue
+
+            # peak_price 업데이트
+            buy_price = float(record.get("buy_price") or 0)
+            prev_peak = float(record.get("peak_price") or 0)
+            new_peak = max(prev_peak, current_price, buy_price)
+            if new_peak > prev_peak:
+                _update_peak_price(record["id"], new_peak)
+                record["peak_price"] = new_peak
+
+            decision = _decide_exit(record, current_price, now_et, market_chg)
+            if not decision:
+                continue
+            exit_strategy, reason = decision
+
+            ok = _execute_intraday_sell(record, current_price, exit_strategy, reason)
+            if ok:
+                closed += 1
+                time.sleep(1.0)  # KIS rate limit
+        except Exception as e:
+            logger.exception(f"[intraday_exit] {ticker} 처리 예외: {e}")
+            try:
+                notify_error("intraday_exit", f"{ticker}: {e}")
+            except Exception:
+                pass
+
+    return {"executed": closed > 0, "closed": closed, "positions": len(records), "skipped": skipped}
+
+
+def force_close_intraday_position(ticker: str) -> dict:
+    """
+    Telegram /intraday_close TICKER 용 수동 청산.
+    """
+    try:
+        rows = (
+            supabase.table("trade_records").select("*")
+            .eq("strategy", "intraday").eq("ticker", ticker.upper())
+            .in_("status", ["holding", "buy_ordered"])
+            .order("buy_date", desc=True).limit(1)
+            .execute().data or []
+        )
+    except Exception as e:
+        return {"success": False, "message": f"DB 조회 실패: {e}"}
+    if not rows:
+        return {"success": False, "message": f"{ticker} 인트라데이 활성 포지션 없음"}
+
+    record = rows[0]
+    if int(record.get("holding_quantity") or 0) <= 0:
+        return {"success": False, "message": f"{ticker} 아직 체결 전(buy_ordered) — 수동 청산 불가"}
+
+    exchange = record.get("exchange_code") or "NASD"
+    excd = EXCHANGE_TO_API.get(exchange, "NAS")
+    price_result = get_current_price({"AUTH": "", "EXCD": excd, "SYMB": ticker.upper()})
+    if price_result.get("rt_cd") != "0":
+        return {"success": False, "message": f"현재가 조회 실패: {price_result.get('msg1')}"}
+    try:
+        current_price = float(price_result.get("output", {}).get("last", 0))
+    except Exception:
+        return {"success": False, "message": "현재가 파싱 실패"}
+    if current_price <= 0:
+        return {"success": False, "message": "현재가 무효"}
+
+    ok = _execute_intraday_sell(record, current_price, "intraday_manual", "수동 청산 (/intraday_close)")
+    return {"success": ok, "message": "청산 접수" if ok else "주문 실패"}
+
+
+def get_intraday_positions_status() -> list[dict]:
+    """
+    /intraday_positions 용. 각 포지션의 현재가/PnL/잔여 시간 요약.
+    """
+    records = _fetch_intraday_holdings()
+    if not records:
+        return []
+    now_et = datetime.now(pytz.timezone(settings.MARKET_TIMEZONE))
+    max_hold = _cfg_i("intraday_max_hold_minutes", 90)
+    out = []
+    for record in records:
+        ticker = record["ticker"]
+        exchange = record.get("exchange_code") or "NASD"
+        excd = EXCHANGE_TO_API.get(exchange, "NAS")
+        try:
+            r = get_current_price({"AUTH": "", "EXCD": excd, "SYMB": ticker})
+            time.sleep(0.5)
+            last = r.get("output", {}).get("last", "0") if r.get("rt_cd") == "0" else "0"
+            current_price = float(last) if last and str(last).strip() not in ("", ".") else 0.0
+        except Exception:
+            current_price = 0.0
+        buy_price = float(record.get("buy_price") or 0)
+        pnl_pct = ((current_price - buy_price) / buy_price * 100.0) if (buy_price > 0 and current_price > 0) else 0.0
+        held = _holding_minutes(record, datetime.now(pytz.UTC))
+        remaining = max(0, int(max_hold - held))
+        out.append({
+            "ticker": ticker,
+            "stock_name": record.get("stock_name") or ticker,
+            "status": record.get("status"),
+            "buy_price": buy_price,
+            "current_price": current_price,
+            "qty": int(record.get("holding_quantity") or record.get("quantity") or 0),
+            "pnl_pct": round(pnl_pct, 2),
+            "peak_price": float(record.get("peak_price") or 0),
+            "held_minutes": int(held),
+            "remaining_minutes": remaining,
+            "eod_force": _is_eod_time(now_et),
+        })
+    return out
+
+
 __all__ = [
     "run_intraday_cycle",
+    "run_intraday_exit_cycle",
+    "force_close_intraday_position",
+    "get_intraday_positions_status",
     "collect_intraday_snapshots",
 ]

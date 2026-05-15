@@ -19,6 +19,7 @@ from app.utils.scheduler import (
     start_data_pipeline_scheduler, stop_data_pipeline_scheduler,
     start_backfill_worker_scheduler, stop_backfill_worker_scheduler,
     start_intraday_scheduler, stop_intraday_scheduler,
+    start_intraday_exit_scheduler, stop_intraday_exit_scheduler,
 )
 from app.telegram_bot.bot import start_bot, stop_bot
 
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
     stop_data_pipeline_scheduler()
     stop_backfill_worker_scheduler()
     stop_intraday_scheduler()
+    stop_intraday_exit_scheduler()
     stop_bot()
 
 
@@ -113,6 +115,7 @@ async def _startup():
     start_data_pipeline_scheduler()
     start_backfill_worker_scheduler()
     start_intraday_scheduler()
+    start_intraday_exit_scheduler()
     start_bot()
 
 

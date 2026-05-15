@@ -885,15 +885,25 @@ class StockRecommendationService:
             except Exception as e:
                 logger.warning(f"VIX 조회 실패: {e}")
 
-            # 6. trade_records에서 ATR 기반 익절/손절 기준 조회
+            # 6. trade_records에서 ATR 기반 익절/손절 기준 조회 (스윙만)
             trade_records_map = {}
+            intraday_tickers: set[str] = set()
             try:
                 tr_response = supabase.table("trade_records").select("*").eq("status", "holding").execute()
                 if tr_response.data:
                     for tr in tr_response.data:
+                        if tr.get("strategy") == "intraday":
+                            intraday_tickers.add(tr["ticker"])
+                            continue
                         trade_records_map[tr["ticker"]] = tr
             except Exception as e:
                 logger.warning(f"trade_records 조회 실패 (고정 비율 폴백): {e}")
+
+            # 인트라데이 포지션은 별도 청산 루프가 담당. 스윙 매도 후보에서 제외.
+            if intraday_tickers:
+                holdings = [h for h in holdings if h.get("ovrs_pdno") not in intraday_tickers]
+                if not holdings:
+                    return {"message": "스윙 매도 대상 없음 (인트라데이 포지션은 별도 처리)", "sell_candidates": []}
 
             # 6. 매도 대상 종목 식별
             sell_candidates = []
