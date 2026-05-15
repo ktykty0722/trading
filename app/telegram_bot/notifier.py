@@ -183,6 +183,32 @@ def notify_backfill_failed(ticker: str, step: str, reason: str):
     notify(text)
 
 
+def notify_intraday_exit(ticker: str, name: str, buy_price: float, sell_price: float,
+                         quantity: int, exit_strategy: str, reason: str,
+                         profit_loss: Optional[float] = None,
+                         profit_loss_pct: Optional[float] = None):
+    """인트라데이 청산 주문 접수 알림"""
+    if profit_loss_pct is not None:
+        emoji = "🟢" if profit_loss_pct >= 0 else "🔴"
+        pnl_line = f"  손익: <b>{profit_loss_pct:+.2f}%</b>"
+        if profit_loss is not None:
+            pnl_line += f" (${profit_loss:+,.2f})"
+        pnl_line += "\n"
+    else:
+        emoji = "🔴"
+        pnl_line = ""
+    text = (
+        f"⚡️📤 <b>인트라데이 청산</b> {emoji}\n\n"
+        f"  종목: <b>{name} ({ticker})</b>\n"
+        f"  매수가: ${buy_price:.2f} → 매도가: <b>${sell_price:.2f}</b>\n"
+        f"  수량: {quantity}주\n"
+        f"{pnl_line}"
+        f"  전략: <code>{exit_strategy}</code>\n"
+        f"  사유: {reason[:200]}"
+    )
+    notify(text)
+
+
 def notify_intraday_order(ticker: str, name: str, price: float, quantity: int,
                           exchange: str, score: float, reason: str):
     """인트라데이 매수 주문 접수 알림"""

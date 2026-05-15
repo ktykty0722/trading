@@ -1320,4 +1320,54 @@ def get_intraday_status() -> dict:
     return {
         "scheduler_running": _intraday_running,
         "lock_held": _intraday_lock,
+        "exit_scheduler_running": _intraday_exit_running,
     }
+
+
+# ============================================================
+# 인트라데이 청산 스케줄러 (1분 주기, intraday_enabled 게이트는 service에서)
+# ============================================================
+_intraday_exit_running = False
+_intraday_exit_lock = False
+
+
+def _run_intraday_exit():
+    global _intraday_exit_lock
+    if _intraday_exit_lock:
+        logger.debug("[intraday_exit] 이미 실행 중 — 스킵")
+        return
+    _intraday_exit_lock = True
+    try:
+        from app.services.intraday_service import run_intraday_exit_cycle
+        run_intraday_exit_cycle()
+    except Exception as e:
+        logger.exception(f"intraday_exit cycle 오류: {e}")
+        try:
+            notify_error("intraday_exit_cycle", str(e))
+        except Exception:
+            pass
+    finally:
+        _intraday_exit_lock = False
+
+
+def start_intraday_exit_scheduler():
+    global _intraday_exit_running
+    if _intraday_exit_running:
+        return False
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_intraday_exit']:
+        schedule.cancel_job(job)
+    schedule.every(1).minutes.do(_run_intraday_exit)
+    _intraday_exit_running = True
+    logger.info("인트라데이 청산 스케줄러 시작됨 (1분 주기)")
+    return True
+
+
+def stop_intraday_exit_scheduler():
+    global _intraday_exit_running
+    if not _intraday_exit_running:
+        return False
+    for job in [j for j in schedule.jobs if j.job_func.__name__ == '_run_intraday_exit']:
+        schedule.cancel_job(job)
+    _intraday_exit_running = False
+    logger.info("인트라데이 청산 스케줄러 중지됨")
+    return True

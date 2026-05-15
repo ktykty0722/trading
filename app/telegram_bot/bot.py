@@ -412,6 +412,49 @@ async def cmd_stop_intraday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ 설정 실패: {e}")
 
 
+async def cmd_intraday_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    try:
+        from app.services.intraday_service import get_intraday_positions_status
+        positions = get_intraday_positions_status()
+        if not positions:
+            return await update.message.reply_text("📭 인트라데이 활성 포지션 없음")
+        lines = [f"⚡️ <b>인트라데이 포지션 ({len(positions)}건)</b>\n"]
+        for p in positions:
+            icon = "🟢" if p["pnl_pct"] >= 0 else "🔴"
+            cur = f"${p['current_price']:.2f}" if p["current_price"] > 0 else "n/a"
+            peak = f"${p['peak_price']:.2f}" if p["peak_price"] > 0 else "n/a"
+            eod_tag = " ⏰EOD강제" if p["eod_force"] else ""
+            lines.append(
+                f"{icon} <b>{p['stock_name']} ({p['ticker']})</b> [{p['status']}]\n"
+                f"  매수: ${p['buy_price']:.2f} × {p['qty']}주 → 현재 {cur}\n"
+                f"  손익: <b>{p['pnl_pct']:+.2f}%</b>  | peak: {peak}\n"
+                f"  보유: {p['held_minutes']}분 / 남은시간: {p['remaining_minutes']}분{eod_tag}\n"
+            )
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 조회 실패: {e}")
+
+
+async def cmd_intraday_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    args = ctx.args
+    if not args:
+        return await update.message.reply_text("사용법: /intraday_close TICKER\n예) /intraday_close PLTR")
+    ticker = args[0].upper()
+    await update.message.reply_text(f"⏳ {ticker} 수동 청산 시도 중...")
+    try:
+        from app.services.intraday_service import force_close_intraday_position
+        result = force_close_intraday_position(ticker)
+        await update.message.reply_text(
+            ("✅ " if result.get("success") else "❌ ") + result.get("message", "n/a")
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ 청산 실패: {e}")
+
+
 async def cmd_intraday_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         return await _deny(update)
@@ -484,6 +527,8 @@ def _build_app() -> Application:
     app.add_handler(CommandHandler("start_intraday", cmd_start_intraday))
     app.add_handler(CommandHandler("stop_intraday",  cmd_stop_intraday))
     app.add_handler(CommandHandler("intraday_today", cmd_intraday_today))
+    app.add_handler(CommandHandler("intraday_positions", cmd_intraday_positions))
+    app.add_handler(CommandHandler("intraday_close",     cmd_intraday_close))
 
     return app
 
@@ -519,6 +564,8 @@ async def _set_commands(app: Application):
         BotCommand("start_intraday", "인트라데이 엔진 ON"),
         BotCommand("stop_intraday",  "인트라데이 엔진 OFF"),
         BotCommand("intraday_today", "오늘 인트라데이 평가"),
+        BotCommand("intraday_positions", "인트라데이 포지션 + PnL"),
+        BotCommand("intraday_close",     "인트라데이 종목 수동 청산"),
     ])
 
 
