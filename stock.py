@@ -89,10 +89,21 @@ def download_yahoo_chart(symbol: str, start_date: str, end_date: str, interval: 
         raise ValueError(f"No data for symbol: {symbol}")
 
     timestamps = result["timestamp"]
-    closes     = result["indicators"]["quote"][0]["close"]
-    date_only  = [pd.Timestamp.fromtimestamp(ts).date() for ts in timestamps]
+    quote = result["indicators"]["quote"][0]
+    opens   = quote.get("open",   [None] * len(timestamps))
+    highs   = quote.get("high",   [None] * len(timestamps))
+    lows    = quote.get("low",    [None] * len(timestamps))
+    closes  = quote.get("close",  [None] * len(timestamps))
+    volumes = quote.get("volume", [None] * len(timestamps))
+    date_only = [pd.Timestamp.fromtimestamp(ts).date() for ts in timestamps]
 
-    df = pd.DataFrame({"Close": closes}, index=pd.DatetimeIndex(date_only))
+    df = pd.DataFrame({
+        "Open":   opens,
+        "High":   highs,
+        "Low":    lows,
+        "Close":  closes,
+        "Volume": volumes,
+    }, index=pd.DatetimeIndex(date_only))
     if df.index.duplicated().any():
         df = df[~df.index.duplicated(keep='last')]
 
@@ -196,13 +207,23 @@ def collect_stock_prices(start_date: str, end_date: str, tickers: list) -> pd.Da
             df.index = pd.to_datetime(df.index.date)
             df = df[~df.index.duplicated(keep='last')]
             for date_idx, row in df.iterrows():
-                close_val = row['Close']
+                close_val = row.get('Close')
                 if pd.isna(close_val):
                     continue
+                # OHLCV (없거나 NaN이면 None)
+                def _safe(v):
+                    try:
+                        return float(v) if v is not None and not pd.isna(v) else None
+                    except Exception:
+                        return None
                 rows.append({
                     'date':   date_idx.date(),
                     'ticker': ticker,
+                    'open':   _safe(row.get('Open')),
+                    'high':   _safe(row.get('High')),
+                    'low':    _safe(row.get('Low')),
                     'close':  float(close_val),
+                    'volume': int(row['Volume']) if (row.get('Volume') is not None and not pd.isna(row.get('Volume'))) else None,
                 })
             print(f"  {ticker} ({name_ko}): {len(df)}개")
         except Exception as e:
@@ -210,7 +231,7 @@ def collect_stock_prices(start_date: str, end_date: str, tickers: list) -> pd.Da
         time.sleep(1)
 
     if not rows:
-        return pd.DataFrame(columns=['date', 'ticker', 'close'])
+        return pd.DataFrame(columns=['date', 'ticker', 'open', 'high', 'low', 'close', 'volume'])
 
     return pd.DataFrame(rows)
 

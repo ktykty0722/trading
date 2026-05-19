@@ -120,11 +120,16 @@ def backfill_stock_prices_for_ticker(ticker: str, name_ko: str, days: int = 365)
 
         rows = []
         for _, row in price_df.iterrows():
-            rows.append({
+            payload = {
                 "date": str(row["date"]),
                 "ticker": row["ticker"],
                 "close": float(row["close"]),
-            })
+            }
+            for col in ("open", "high", "low", "volume"):
+                v = row.get(col) if col in row else None
+                if v is not None and not pd.isna(v):
+                    payload[col] = float(v) if col != "volume" else int(v)
+            rows.append(payload)
         supabase.table("stock_daily_prices").upsert(rows, on_conflict="date,ticker").execute()
         return {"success": True, "rows_saved": len(rows), "message": f"{len(rows)}건 저장"}
     except Exception as e:
@@ -269,9 +274,86 @@ def process_pending_backfill_jobs(max_jobs_per_run: int = 3) -> dict:
     return {"processed": processed, "message": f"{processed}건 처리 완료"}
 
 
+def rebackfill_volumes_for_all(days: int = 365) -> dict:
+    """
+    모든 active 종목의 stock_daily_prices를 Yahoo Finance로 다시 수집해
+    open/high/low/close/volume을 채운다. 기존 close-only 행은 upsert로 보강됨.
+
+    유동성 필터(check_liquidity_filter)가 volume IS NULL이면 모든 매수 후보를
+    차단했던 문제를 해결하기 위한 일회성/필요시 수동 보정 함수.
+    """
+    try:
+        rows = (
+            supabase.table("stock_universe")
+            .select("ticker, name_ko, is_active")
+            .eq("is_active", True)
+            .execute()
+            .data or []
+        )
+    except Exception as e:
+        return {"success": False, "message": f"universe 조회 실패: {e}"}
+
+    tickers = [(r["ticker"], r.get("name_ko") or r["ticker"]) for r in rows]
+    if not tickers:
+        return {"success": False, "message": "활성 종목 없음"}
+
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    logger.info(f"rebackfill_volumes: {len(tickers)}개 종목 / {start_date}~{end_date}")
+
+    saved_total = 0
+    failed: list[str] = []
+    try:
+        from stock import collect_stock_prices
+        price_df = collect_stock_prices(start_date=start_date, end_date=end_date, tickers=tickers)
+    except Exception as e:
+        return {"success": False, "message": f"collect_stock_prices 실패: {e}"}
+
+    if price_df is None or price_df.empty:
+        return {"success": False, "message": "Yahoo 데이터 없음"}
+
+    # ticker 단위로 묶어 upsert (KIS rate limit 없음 — supabase만 사용)
+    for ticker, _name in tickers:
+        sub = price_df[price_df["ticker"] == ticker]
+        if sub.empty:
+            failed.append(ticker)
+            continue
+        payload_rows = []
+        for _, row in sub.iterrows():
+            payload = {
+                "date": str(row["date"]),
+                "ticker": ticker,
+                "close": float(row["close"]),
+            }
+            for col in ("open", "high", "low", "volume"):
+                v = row.get(col) if col in row else None
+                if v is not None and not pd.isna(v):
+                    payload[col] = float(v) if col != "volume" else int(v)
+            payload_rows.append(payload)
+        if not payload_rows:
+            continue
+        try:
+            supabase.table("stock_daily_prices").upsert(
+                payload_rows, on_conflict="date,ticker"
+            ).execute()
+            saved_total += len(payload_rows)
+        except Exception as e:
+            logger.warning(f"rebackfill {ticker} upsert 실패: {e}")
+            failed.append(ticker)
+
+    return {
+        "success": True,
+        "tickers": len(tickers),
+        "rows_saved": saved_total,
+        "failed": failed,
+        "message": f"{len(tickers)}종목 / {saved_total}건 저장, 실패 {len(failed)}건",
+    }
+
+
 __all__ = [
     "enqueue_backfill_job",
     "run_backfill_job",
     "process_pending_backfill_jobs",
     "backfill_stock_prices_for_ticker",
+    "rebackfill_volumes_for_all",
 ]
