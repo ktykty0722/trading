@@ -251,20 +251,35 @@ def _compute_signal(ticker: str, snapshot: dict) -> dict:
     if base_price > 0:
         momentum_15m = (price - base_price) / base_price * 100.0
 
-    # VWAP & day high
+    # KIS HHDFS00000300의 tvol은 장 시작부터의 누적 거래량.
+    # → snapshot 사이 델타로 변환해서 "분당 거래량"을 만든 뒤 비율 계산.
     prices_arr = [float(h["price"]) for h in history]
-    vols_arr = [int(h.get("volume") or 0) for h in history]
-    pv = sum(p * v for p, v in zip(prices_arr, vols_arr) if v > 0)
-    vsum = sum(v for v in vols_arr if v > 0)
+    vols_cum = [int(h.get("volume") or 0) for h in history]
+    # 델타(이전 snapshot 대비). 첫 항목은 0으로 둠(비교 불가).
+    delta_vols = [0]
+    for i in range(1, len(vols_cum)):
+        d = vols_cum[i] - vols_cum[i - 1]
+        # 거래일 경계/리셋(작은 음수)인 경우 0 또는 snapshot 자체값 사용
+        if d < 0:
+            d = vols_cum[i] if vols_cum[i] > 0 else 0
+        delta_vols.append(d)
+
+    # VWAP & day high — VWAP은 가격 × 분당 델타 거래량으로 산출
+    pv = sum(p * v for p, v in zip(prices_arr, delta_vols) if v > 0)
+    vsum = sum(v for v in delta_vols if v > 0)
     vwap = (pv / vsum) if vsum > 0 else price
     day_high = max(prices_arr) if prices_arr else price
     day_high_breakout = price >= day_high * 0.999
 
-    # 거래량 비율: 최근 5분 평균 / 그 이전 평균
-    recent_5 = [h for h in history if datetime.fromisoformat(h["timestamp"].replace("Z", "+00:00")) >= (datetime.now(pytz.UTC) - timedelta(minutes=5))]
-    earlier = [h for h in history if h not in recent_5]
-    recent_vol_avg = (sum(int(h.get("volume") or 0) for h in recent_5) / len(recent_5)) if recent_5 else 0
-    earlier_vol_avg = (sum(int(h.get("volume") or 0) for h in earlier) / len(earlier)) if earlier else 0
+    # 거래량 비율: 최근 5분 분당 평균 / 그 이전 분당 평균
+    now_utc = datetime.now(pytz.UTC)
+    recent_5_idx = [
+        i for i, h in enumerate(history)
+        if datetime.fromisoformat(h["timestamp"].replace("Z", "+00:00")) >= (now_utc - timedelta(minutes=5))
+    ]
+    earlier_idx = [i for i in range(len(history)) if i not in set(recent_5_idx)]
+    recent_vol_avg = (sum(delta_vols[i] for i in recent_5_idx) / len(recent_5_idx)) if recent_5_idx else 0
+    earlier_vol_avg = (sum(delta_vols[i] for i in earlier_idx) / len(earlier_idx)) if earlier_idx else 0
     volume_ratio = (recent_vol_avg / earlier_vol_avg) if earlier_vol_avg > 0 else 1.0
 
     above_vwap = price >= vwap
@@ -502,17 +517,41 @@ def run_intraday_cycle() -> dict:
     if not universe:
         return {"executed": False, "reason": "no universe"}
 
-    # 시장 게이트
-    safe, reason = check_daily_loss_limit()
-    if not safe:
-        return {"executed": False, "reason": f"daily_loss: {reason}"}
-
-    # snapshot 수집 (universe + SPY/QQQ)
+    # snapshot 수집 (universe + SPY/QQQ) — 게이트보다 먼저, 항상 수행
     market_proxies = [{"ticker": "SPY", "exchange": "AMEX", "name_ko": "SPY"},
                       {"ticker": "QQQ", "exchange": "NASD", "name_ko": "QQQ"}]
     snapshots = collect_intraday_snapshots(universe + market_proxies)
     if not snapshots:
         return {"executed": False, "reason": "no snapshots"}
+
+    # 신호 계산/저장 — 매수 게이트와 무관하게 항상 수행 (백테스트/관측 데이터 확보)
+    universe_tickers = {u["ticker"] for u in universe}
+    name_map = {u["ticker"]: u.get("name_ko", u["ticker"]) for u in universe}
+    exch_map = {u["ticker"]: u.get("exchange", "NASD") for u in universe}
+
+    signal_rows = []
+    sig_by_ticker: dict[str, dict] = {}
+    for snap in snapshots:
+        if snap["ticker"] not in universe_tickers:
+            continue
+        try:
+            sig = _compute_signal(snap["ticker"], snap)
+        except Exception as e:
+            logger.debug(f"[intraday] {snap['ticker']} 시그널 계산 실패: {e}")
+            continue
+        signal_rows.append({k: v for k, v in sig.items() if k != "market_chg_pct"})
+        sig_by_ticker[snap["ticker"]] = sig
+
+    if signal_rows:
+        try:
+            supabase.table("intraday_signals").upsert(signal_rows, on_conflict="ticker,timestamp").execute()
+        except Exception as e:
+            logger.warning(f"[intraday] intraday_signals 저장 실패: {e}")
+
+    # 이 시점부터는 "매수 주문 진입" 단계. 게이트 미통과 시 신호는 이미 저장된 상태.
+    safe, reason = check_daily_loss_limit()
+    if not safe:
+        return {"executed": False, "reason": f"daily_loss: {reason}", "evaluated": len(signal_rows)}
 
     # 보유/주문중 ticker
     holding_tickers: set[str] = set()
@@ -531,12 +570,10 @@ def run_intraday_cycle() -> dict:
     except Exception as e:
         logger.warning(f"[intraday] holdings 조회 실패: {e}")
 
-    # 최대 보유 게이트
     can_buy, mp_reason = check_max_positions(holding_tickers)
     if not can_buy:
-        return {"executed": False, "reason": f"max_positions: {mp_reason}"}
+        return {"executed": False, "reason": f"max_positions: {mp_reason}", "evaluated": len(signal_rows)}
 
-    # VIX 게이트
     vix_value = None
     try:
         vrow = supabase.table("economic_indicators").select("vix").order("date", desc=True).limit(1).execute().data
@@ -546,45 +583,25 @@ def run_intraday_cycle() -> dict:
         pass
     can_trade, vix_reason = check_vix_halt_gate(vix_value)
     if not can_trade:
-        return {"executed": False, "reason": f"vix: {vix_reason}"}
+        return {"executed": False, "reason": f"vix: {vix_reason}", "evaluated": len(signal_rows)}
 
-    # MDD
     can_mdd, multiplier, mdd_reason = get_mdd_risk_state()
     if not can_mdd:
-        return {"executed": False, "reason": f"mdd: {mdd_reason}"}
+        return {"executed": False, "reason": f"mdd: {mdd_reason}", "evaluated": len(signal_rows)}
 
-    # 일일 진입 제한
     today_n = _today_intraday_order_count()
     max_today = _cfg_i("intraday_max_entries_per_day", 3)
     if today_n >= max_today:
-        return {"executed": False, "reason": f"max_entries_per_day {today_n}/{max_today}"}
+        return {"executed": False, "reason": f"max_entries_per_day {today_n}/{max_today}", "evaluated": len(signal_rows)}
 
     cooldown = _cooldown_tickers(datetime.now(pytz.UTC))
-    # universe snapshot만 신호 계산 (market proxy 제외)
-    universe_tickers = {u["ticker"] for u in universe}
-    name_map = {u["ticker"]: u.get("name_ko", u["ticker"]) for u in universe}
-    exch_map = {u["ticker"]: u.get("exchange", "NASD") for u in universe}
 
+    # 후보 필터 (이미 계산된 sig 재사용)
     candidates = []
-    signal_rows = []
-    for snap in snapshots:
-        if snap["ticker"] not in universe_tickers:
-            continue
-        try:
-            sig = _compute_signal(snap["ticker"], snap)
-        except Exception as e:
-            logger.debug(f"[intraday] {snap['ticker']} 시그널 계산 실패: {e}")
-            continue
-        signal_rows.append({k: v for k, v in sig.items() if k != "market_chg_pct"})
-        ok, _reason = _is_candidate(sig, holding_tickers, cooldown - {snap["ticker"]} if snap["ticker"] not in cooldown else cooldown)
+    for ticker, sig in sig_by_ticker.items():
+        ok, _reason = _is_candidate(sig, holding_tickers, cooldown - {ticker} if ticker not in cooldown else cooldown)
         if ok:
             candidates.append(sig)
-
-    if signal_rows:
-        try:
-            supabase.table("intraday_signals").upsert(signal_rows, on_conflict="ticker,timestamp").execute()
-        except Exception as e:
-            logger.warning(f"[intraday] intraday_signals 저장 실패: {e}")
 
     if not candidates:
         return {"executed": False, "reason": "no candidates", "evaluated": len(signal_rows)}

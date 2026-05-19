@@ -142,11 +142,16 @@ def _upsert_stock_prices(price_df: pd.DataFrame, storage_end: str):
         date_str = str(row['date'])
         if date_str > storage_end:
             continue
-        rows_to_upsert.append({
+        payload = {
             "date":   date_str,
             "ticker": row['ticker'],
             "close":  row['close'],
-        })
+        }
+        # 신 스키마: OHLCV 함께 저장. 구 결과(close만)와도 호환되도록 안전 추출.
+        for col in ("open", "high", "low", "volume"):
+            if col in row and row[col] is not None and not pd.isna(row[col]):
+                payload[col] = float(row[col]) if col != "volume" else int(row[col])
+        rows_to_upsert.append(payload)
 
     if not rows_to_upsert:
         return 0

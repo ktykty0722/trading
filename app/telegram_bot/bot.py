@@ -455,6 +455,40 @@ async def cmd_intraday_close(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ 청산 실패: {e}")
 
 
+async def cmd_rebackfill_prices(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _authorized(update):
+        return await _deny(update)
+    args = ctx.args
+    days = 365
+    if args:
+        try:
+            days = int(args[0])
+            days = max(30, min(days, 1825))
+        except Exception:
+            return await update.message.reply_text("사용법: /rebackfill_prices [days]\n예) /rebackfill_prices 365")
+    await update.message.reply_text(
+        f"⏳ 전 종목 OHLCV 재백필 시작 ({days}일)... Yahoo API 호출이 종목수×1초 정도 걸립니다."
+    )
+    try:
+        from app.services.backfill_service import rebackfill_volumes_for_all
+        result = rebackfill_volumes_for_all(days=days)
+        if result.get("success"):
+            failed = result.get("failed") or []
+            failed_str = f" — 실패 {','.join(failed[:5])}{'...' if len(failed) > 5 else ''}" if failed else ""
+            await update.message.reply_text(
+                f"✅ 재백필 완료\n"
+                f"  종목: {result['tickers']}개\n"
+                f"  행 저장: {result['rows_saved']:,}건\n"
+                f"  실패: {len(failed)}건{failed_str}\n\n"
+                f"<i>이제 유동성 필터(volume 기반) 통과 가능합니다.</i>",
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(f"❌ {result.get('message')}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 재백필 실패: {e}")
+
+
 async def cmd_backtest_intraday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         return await _deny(update)
@@ -551,6 +585,7 @@ def _build_app() -> Application:
     app.add_handler(CommandHandler("intraday_positions", cmd_intraday_positions))
     app.add_handler(CommandHandler("intraday_close",     cmd_intraday_close))
     app.add_handler(CommandHandler("backtest_intraday",  cmd_backtest_intraday))
+    app.add_handler(CommandHandler("rebackfill_prices",  cmd_rebackfill_prices))
 
     return app
 
@@ -589,6 +624,7 @@ async def _set_commands(app: Application):
         BotCommand("intraday_positions", "인트라데이 포지션 + PnL"),
         BotCommand("intraday_close",     "인트라데이 종목 수동 청산"),
         BotCommand("backtest_intraday",  "인트라데이 백테스트 (옵션: days)"),
+        BotCommand("rebackfill_prices",  "전 종목 OHLCV 재백필 (옵션: days)"),
     ])
 
 
